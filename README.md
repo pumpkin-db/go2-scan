@@ -43,7 +43,7 @@ go2-scan/
 ## 仿真配置
 
 仿真 = **Gazebo 场景 + Go2 狗 + Livox MID360 传感器 → 实时点云 → SCAN-Planner → 狗动起来**。
-核心思路：Gazebo 当**传感器模拟器**（狗身上的 MID360 边走边感知识别），不是从场景文件里预提取点云。
+核心思路：Gazebo 当**传感器模拟器**（狗身上的 MID360 边走边感知识别）。
 
 ### 组件（一条链路上的节点）
 
@@ -120,7 +120,7 @@ bash simulation/launch_gazebo_sim.sh
 
 ### 运行时的现象（对照预期）
 
-1. Gazebo 里狗有腿步态摆动（不是纯平移），MID360 是蓝色半球 mesh 在狗前方。
+1. Gazebo 里狗有腿步态摆动，MID360 是 mesh 在狗前方。
 2. RViz 里 `scan_map`（绿）随狗走逐步扩展，慢慢逼近 `map`（白，完整场景）。
 3. 默认 `navi_mode=1`：狗朝目标点走。发目标：
    ```bash
@@ -139,10 +139,3 @@ bash simulation/launch_gazebo_sim.sh
 - ✅ 三个地图对照（map 完整场景 / scan_map 累积扫描 / occ_map 占据图）
 - ⏳ 覆盖规划（尝试已知的探索算法）、赋色层、安全层、NaVILA 语言层 —— 待做
 
-## 硬约束
-
-1. 算法不自己写，只用现成/已验证实现（修改+组合+胶水）。
-2. **ROS1 Noetic + Ubuntu 20.04**，不是 ROS2（JetPack 5.1.1 锁死）。
-3. Orin NX 16GB 内存，VLM 只能 Int4 低频。
-4. 摔倒=取消资格，地形安全是硬约束。
-5. 赛中不能人为触碰机器狗，语言控制只用于赛前解析+答辩。
