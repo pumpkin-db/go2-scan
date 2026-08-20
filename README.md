@@ -18,7 +18,7 @@ RAICOM 2026 北斗时空应用赛 **四足 SLAM 组** —— 宇树 Go2 + Livox 
 ┌──────────────────────────────┐
 │ L0  SLAM: FAST-LIO2 + MID360 │   ← 实时位姿 + 点云
 │ L1  地图: Python VoxelMap    │   ← 稀疏字典 + 相机投影赋色
-│ L2  规划: 弓形覆盖 + A* + PP │   ← SCAN-Planner 局部规划
+│ L2  规划: 探索 + A* + PP │   ← SCAN-Planner 局部规划
 │ L3  执行: Go2 SDK2 Move()    │
 │ L4  安全: 高程地形 + 看门狗  │   ← 摔倒=取消资格
 └──────────────────────────────┘
@@ -51,7 +51,7 @@ go2-scan/
 
 - ✅ Gazebo 场景仿真（indoor_1.world + Go2 + Livox MID360 → 实时点云 → SCAN-Planner → 狗动起来）
 - ✅ 三个地图对照（map 完整场景 / scan_map 累积扫描 / occ_map 占据图）
-- ⏳ 覆盖规划（弓形 → navi_mode=3）、赋色层、安全层、NaVILA 语言层 —— 待做
+- ⏳ 覆盖规划（尝试已知的探索算法）、赋色层、安全层、NaVILA 语言层 —— 待做
 
 ## 硬约束
 
