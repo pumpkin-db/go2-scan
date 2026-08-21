@@ -412,6 +412,11 @@ void LivoxPointsPlugin::PublishPointCloud2XYZ(std::vector<std::pair<int, AviaRot
     pc.points.resize(points_pair.size());
     ros::Time timestamp = ros::Time::now();
     int pt_count = 0;
+    // 传感器真实世界系位姿（Gazebo 物理），点云直接转到世界系，下游免变换
+    // 正确组合：model 世界位姿 × sensor 相对 model 位姿（Pose 乘法，含旋转）
+    ignition::math::Pose3d sensor_world_pose = parentEntity->WorldPose() * raySensor->Pose();
+    ignition::math::Quaterniond world_rot = sensor_world_pose.Rot();
+    ignition::math::Vector3d world_pos = sensor_world_pose.Pos();
 #pragma omp parallel for
     for (int i = 0; i < points_pair.size(); ++i) {
         std::pair<int, gazebo::AviaRotateInfo> &pair = points_pair[i];
@@ -434,19 +439,14 @@ void LivoxPointsPlugin::PublishPointCloud2XYZ(std::vector<std::pair<int, AviaRot
             auto rotate_info = pair.second;
             ignition::math::Quaterniond ray;
             ray.Euler(ignition::math::Vector3d(0.0, rotate_info.zenith, rotate_info.azimuth));
-            //                auto axis = rotate * ray * math::Vector3(1.0, 0.0, 0.0);
-            //                auto point = range * axis + world_pose.Pos();
             auto axis = ray * ignition::math::Vector3d(1.0, 0.0, 0.0);
-
-            // if (range < 0.3) {
-            //     ROS_WARN_STREAM("Small pt: range: " << range << ", axis: " << axis);
-            // }
             auto point = range * axis;
+            // 传感器系 → 世界系（旋转 + 平移）
+            ignition::math::Vector3d point_world = world_rot.RotateVector(point) + world_pos;
             pcl::PointXYZ pt;
-            pt.x = point.X();
-            pt.y = point.Y();
-            pt.z = point.Z();
-            // if (pt_count < pc.size() && pt_count > 0)
+            pt.x = point_world.X();
+            pt.y = point_world.Y();
+            pt.z = point_world.Z();
 #pragma omp critical
             {
                 pc[pt_count] = pt;
@@ -457,7 +457,8 @@ void LivoxPointsPlugin::PublishPointCloud2XYZ(std::vector<std::pair<int, AviaRot
     pc.resize(pt_count);
     pcl::toROSMsg(pc, scan_point);
     scan_point.header.stamp = timestamp;
-    scan_point.header.frame_id = frameName;
+    // frame 改 world：点云已是世界系，下游 scan_map/tare_bridge/grid_map 免变换
+    scan_point.header.frame_id = "world";
     rosPointPub.publish(scan_point);
     // SendRosTf(parentEntity->WorldPose(), world->Name(), raySensor->ParentName());
     ros::spinOnce();

@@ -25,6 +25,10 @@ void PlanningEnvParameters::ReadParameters(ros::NodeHandle& nh)
 
   kKeyposeCloudStackNum = misc_utils_ns::getParam<int>(nh, "kKeyposeCloudStackNum", 5);
 
+  // AND 低占据判定参数
+  low_occupy_ground_z = misc_utils_ns::getParam<double>(nh, "low_occupy_ground_z", 0.0);
+  low_occupy_height_z = misc_utils_ns::getParam<double>(nh, "low_occupy_height_z", 0.8);
+
   kPointCloudRowNum = misc_utils_ns::getParam<int>(nh, "kPointCloudRowNum", 20);
   kPointCloudColNum = misc_utils_ns::getParam<int>(nh, "kPointCloudColNum", 20);
   kPointCloudLevelNum = misc_utils_ns::getParam<int>(nh, "kPointCloudLevelNum", 10);
@@ -85,6 +89,7 @@ PlanningEnv::PlanningEnv(ros::NodeHandle nh, ros::NodeHandle nh_private, std::st
       std::make_unique<pointcloud_utils_ns::PCLCloud<PlannerCloudPointType>>(nh, "diff_cloud", world_frame_id);
 
   collision_cloud_ = pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>);
+  low_occupy_cloud_ = pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
   terrain_cloud_ = std::make_unique<pointcloud_utils_ns::PCLCloud<pcl::PointXYZI>>(nh, "terrain_cloud", world_frame_id);
 
@@ -163,6 +168,11 @@ void PlanningEnv::UpdateCollisionCloud()
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_tmp(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::copyPointCloud<PlannerCloudPointType, pcl::PointXYZI>(*vertical_surface_cloud_stack_[i], *cloud_tmp);
     *(collision_cloud_) += *cloud_tmp;
+  }
+  // AND 逻辑：加上 z<0.8m 低占据云（原始点云，不受垂直面提取过滤），挡住墙外目标/低通道
+  if (low_occupy_cloud_ && !low_occupy_cloud_->points.empty())
+  {
+    *(collision_cloud_) += *(low_occupy_cloud_);
   }
   collision_cloud_downsizer_.Downsize(collision_cloud_, parameters_.kCollisionCloudDwzLeafSize,
                                       parameters_.kCollisionCloudDwzLeafSize, parameters_.kCollisionCloudDwzLeafSize);

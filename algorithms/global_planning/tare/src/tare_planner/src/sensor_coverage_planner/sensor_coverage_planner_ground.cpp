@@ -308,7 +308,6 @@ void SensorCoveragePlanner3D::RegisteredScanCallback(const sensor_msgs::PointClo
 
     pd_.keypose_cloud_->cloud_->clear();
     pcl::copyPointCloud(*(pd_.registered_scan_stack_->cloud_), *(pd_.keypose_cloud_->cloud_));
-    // pd_.keypose_cloud_->Publish();
     pd_.registered_scan_stack_->cloud_->clear();
     keypose_cloud_update_ = true;
   }

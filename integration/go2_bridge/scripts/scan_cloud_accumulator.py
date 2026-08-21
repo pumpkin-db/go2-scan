@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-glue 累积节点：把每帧 /mid360_points 用 lidar_pose 变换到世界系并体素累积，发布 /scan_map。
+glue 累积节点：把每帧 /mid360_points（已是世界系，frame=world，由 livox 插件直接输出）
+            按距离过滤后体素累积，发布 /scan_map。
 
 【纯累积版，add-only】—— 体素一旦被扫到就永久保留，不删除。
 
-输入：/mid360_points（传感器坐标）+ /quad_0/lidar_pose（LiDAR 世界系位姿）
+输入：/mid360_points（世界系点云，frame=world）
 输出：/scan_map（累积体素点云，frame world，1Hz）
 服务：/scan_map/save 保存、/scan_map/clear 清空
 """
@@ -15,12 +16,11 @@ import sensor_msgs.point_cloud2 as pc2
 from sensor_msgs.msg import PointCloud2
 from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty, EmptyResponse, Trigger
-from tf.transformations import quaternion_matrix
 
 
 class ScanAccumulator:
     def __init__(self):
-        self.pose = None
+        self.pose = None  # 仅作距离过滤参考基准（不做坐标变换）
         self.voxel = rospy.get_param('~voxel_size', 0.05)
         self.max_range = rospy.get_param('~max_range', 12.0)
         self.min_range = rospy.get_param('~min_range', 0.3)
@@ -34,30 +34,28 @@ class ScanAccumulator:
         rospy.Timer(rospy.Duration(1.0), self.publish_cb)
         rospy.Service('/scan_map/save', Trigger, self.save_cb)
         rospy.Service('/scan_map/clear', Empty, self.clear_cb)
-        rospy.loginfo('[scan_cloud_accumulator] ready: pure-accumulate map, voxel=%.2fm', self.voxel)
+        rospy.loginfo('[scan_cloud_accumulator] ready: world-frame accumulate map, voxel=%.2fm', self.voxel)
 
     def pose_cb(self, msg):
+        # 仅保存用作距离过滤基准（排除狗自身点），不用于坐标变换
         self.pose = msg.pose.pose
 
     def cloud_cb(self, msg):
-        if self.pose is None:
-            return
         pts = np.array([[p[0], p[1], p[2]]
                         for p in pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True)],
                        dtype=np.float64)
         if len(pts) == 0:
             return
-        # 变换到世界系
-        p = self.pose.position
-        q = self.pose.orientation
-        R = quaternion_matrix([q.x, q.y, q.z, q.w])[:3, :3]
-        pts_w = pts @ R.T + np.array([p.x, p.y, p.z])
-        origin = np.array([p.x, p.y, p.z])
+        # 点云已是世界系（livox 插件直接输出），无需坐标变换
+        # 距离过滤基准：用 dog 传感器位置（若无则原点）
+        if self.pose is not None:
+            origin = np.array([self.pose.position.x, self.pose.position.y, self.pose.position.z])
+        else:
+            origin = np.array([0.0, 0.0, 0.0])
 
-        # 距离过滤（排除近点=狗自身）
-        dist = np.linalg.norm(pts_w - origin, axis=1)
+        dist = np.linalg.norm(pts - origin, axis=1)
         mask = (dist >= self.min_range) & (dist <= self.max_range)
-        pts_w = pts_w[mask]
+        pts_w = pts[mask]
         if len(pts_w) == 0:
             return
 

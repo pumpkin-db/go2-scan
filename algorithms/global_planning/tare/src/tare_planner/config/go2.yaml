@@ -47,6 +47,10 @@ rolling_occupancy_grid/resolution_x : 0.3
 rolling_occupancy_grid/resolution_y : 0.3
 rolling_occupancy_grid/resolution_z : 0.3
 
+# AND 低占据判定：z∈[ground, ground+height] 的原始点云进碰撞云（不误伤楼梯——楼梯是连续可站立面，不构成"被占据柱"）
+low_occupy_ground_z : 0.2
+low_occupy_height_z : 0.6
+
 kSurfaceCloudDwzLeafSize : 0.3
 kCollisionCloudDwzLeafSize : 0.2
 kKeyposeCloudStackNum : 5

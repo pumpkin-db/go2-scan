@@ -44,7 +44,7 @@
     <param name="lidar_z" value="0.2077"/>
   </node>
 
-  <!-- 4. SCAN-Planner 主算法（mid360 传感器坐标 -> cloud_is_world=false） -->
+  <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换） -->
   <include file="$(find scan_planner)/launch/advanced_param.xml">
     <arg name="is_real_world" value="false"/>
     <arg name="navi_mode" value="$(arg navi_mode)"/>
@@ -52,7 +52,7 @@
     <arg name="body_pose_topic" value="/quad_0/body_pose"/>
     <arg name="sensor_pose_topic" value="/quad_0/lidar_pose"/>
     <arg name="cloud_topic" value="/mid360_points"/>
-    <arg name="cloud_is_world" value="false"/>
+    <arg name="cloud_is_world" value="true"/>
     <arg name="depth_topic" value="/camera/aligned_depth_to_color/image_raw"/>
     <arg name="cx" value="321.04638671875"/>
     <arg name="cy" value="243.44969177246094"/>
@@ -63,6 +63,8 @@
   <!-- 5. 狗模型 TF 显示 -->
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="go2_robot_state_publisher"/>
   <node pkg="scan_planner" name="go2_gait_publisher" type="go2_gait_publisher" output="screen"/>
+  <!-- 狗总轨迹可视化：订阅 /quad_0/body_pose，累积发布 /odom_visualization/path（his_path） -->
+  <node pkg="odom_visualization" type="odom_visualization" name="odom_visualization" output="screen"/>
 
   <!-- 6. 场景完整点云（ground truth，对照用）：map_pub 发布 indoor_1.pcd 到 /map -->
   <node pkg="map_generator" type="map_pub" name="map_pub"

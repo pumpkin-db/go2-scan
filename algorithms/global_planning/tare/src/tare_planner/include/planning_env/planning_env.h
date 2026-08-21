@@ -52,6 +52,9 @@ struct planning_env_ns::PlanningEnvParameters
   double kCollisionCloudDwzLeafSize;
   double kKeyposeGraphCollisionCheckRadius;
   int kKeyposeGraphCollisionCheckPointNumThr;
+  // AND 低占据判定：z∈[ground, ground+low_occupy_height] 的原始点云进碰撞云
+  double low_occupy_ground_z;      // 地面高度（默认 0.0）
+  double low_occupy_height_z;      // 通道禁行高度上限（默认 0.8m）
 
   int kKeyposeCloudStackNum;
 
@@ -170,6 +173,23 @@ public:
       vertical_surface_extractor_.ExtractVerticalSurface<PlannerCloudPointType, PlannerCloudPointType>(
           keypose_cloud_->cloud_, vertical_surface_cloud_->cloud_);
       // vertical_surface_cloud_->Publish();
+
+      // AND 逻辑：额外保留 z∈[ground, ground+low_occupy_height] 的原始点云（不受垂直面提取过滤）
+      // 加进碰撞云可挡住 z<0.8m 的通道/墙外目标，而不影响楼梯（台阶不形成连续低占据柱）
+      // 故不覆盖垂直面提取（原有逻辑），只在其基础上做加法
+      low_occupy_cloud_->clear();
+      for (const auto& pt : keypose_cloud_->cloud_->points)
+      {
+        if (pt.z >= parameters_.low_occupy_ground_z && pt.z <= parameters_.low_occupy_ground_z + parameters_.low_occupy_height_z)
+        {
+          pcl::PointXYZI low_pt;
+          low_pt.x = pt.x;
+          low_pt.y = pt.y;
+          low_pt.z = pt.z;
+          low_pt.intensity = 0;
+          low_occupy_cloud_->points.push_back(low_pt);
+        }
+      }
 
       pointcloud_manager_->UpdateOldCloudPoints();
       pointcloud_manager_->UpdatePointCloud<PlannerCloudPointType>(*(vertical_surface_cloud_->cloud_));
@@ -326,6 +346,8 @@ private:
   pointcloud_utils_ns::VerticalSurfaceExtractor vertical_frontier_extractor_;
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr collision_cloud_;
+  // 低占据云：z∈[ground, ground+0.8m] 的原始点云（不受垂直面提取过滤），加进碰撞云形成 AND——挡住 z<0.8m 通道/墙
+  pcl::PointCloud<pcl::PointXYZI>::Ptr low_occupy_cloud_;
   std::unique_ptr<pointcloud_utils_ns::PCLCloud<PlannerCloudPointType>> diff_cloud_;
   std::unique_ptr<pointcloud_utils_ns::PCLCloud<pcl::PointXYZI>> terrain_cloud_;
 

@@ -19,6 +19,10 @@
       </geometry>
     </collision>
   </link>
+  <!-- base 设 kinematic：不受腿步态反作用力，位置精确由 set_model_state 决定，消除 scan_map 漂移 -->
+  <gazebo reference="base">
+    <kinematic>true</kinematic>
+  </gazebo>
   <link name="Head_upper">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />

@@ -92,7 +92,7 @@ Visualization Manager:
           Buffer Length: 1
           Class: rviz/Path
           Color: 25; 255; 0
-          Enabled: false
+          Enabled: true
           Head Diameter: 0.30000001192092896
           Head Length: 0.20000000298023224
           Length: 0.30000001192092896
@@ -111,30 +111,6 @@ Visualization Manager:
           Shaft Length: 0.10000000149011612
           Topic: /odom_visualization/path
           Unreliable: false
-          Value: false
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz/Path
-          Color: 255; 0; 0
-          Enabled: true
-          Head Diameter: 0.15000000596046448
-          Head Length: 0.15000000596046448
-          Length: 0.15000000596046448
-          Line Style: Lines
-          Line Width: 0.05000000074505806
-          Name: initial_path
-          Offset:
-            X: 0
-            Y: 0
-            Z: 0
-          Pose Color: 255; 85; 255
-          Pose Style: None
-          Queue Size: 10
-          Radius: 0.05000000074505806
-          Shaft Diameter: 0.05000000074505806
-          Shaft Length: 0.10000000149011612
-          Topic: /initial_path
-          Unreliable: false
           Value: true
       Enabled: true
       Name: Planning
@@ -147,34 +123,6 @@ Visualization Manager:
           Namespaces:
             sliding_map: true
           Queue Size: 100
-          Value: true
-        - Alpha: 0.30000001192092896
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 2
-            Min Value: -1
-            Value: false
-          Axis: Z
-          Channel Name: z
-          Class: rviz/PointCloud2
-          Color: 85; 170; 255
-          Color Transformer: Intensity
-          Decay Time: 0
-          Enabled: true
-          Invert Rainbow: false
-          Max Color: 211; 215; 207
-          Min Color: 85; 170; 255
-          Name: sim_map
-          Position Transformer: XYZ
-          Queue Size: 10
-          Selectable: true
-          Size (Pixels): 3
-          Size (m): 0.05000000074505806
-          Style: Flat Squares
-          Topic: /map_generator/global_cloud
-          Unreliable: false
-          Use Fixed Frame: true
-          Use rainbow: false
           Value: true
         - Alpha: 1
           Autocompute Intensity Bounds: true
