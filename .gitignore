@@ -11,6 +11,7 @@ logs/
 build/
 devel/
 install/
+.catkin_workspace
 
 # 归档/临时
 *.tar.gz

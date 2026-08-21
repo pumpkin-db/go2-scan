@@ -1,0 +1,11 @@
+# elevation_mapping 地图尺寸 + 分辨率（全局：固定覆盖整个 indoor_1 场景）
+length_in_x: 60.0     # 覆盖场景 53×34m + 裕量
+length_in_y: 45.0
+position_x: 18.0      # 场景中心（与 track_point 一致，地图固定不动）
+position_y: 13.0
+resolution: 0.05      # 5cm，与 SCAN-Planner 栅格一致
+fused_map_publishing_rate: 2.0   # 2Hz 定时发布 fused map 到 /elevation_mapping/elevation_map（默认 0 不发布）
+min_variance: 0.000009
+max_variance: 0.01
+mahalanobis_distance_threshold: 2.5
+multi_height_noise: 0.0000009

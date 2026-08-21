@@ -1,0 +1,68 @@
+<launch>
+  <!-- ============================================================ -->
+  <!-- FAST-LIO2 integration test (simulated FAST-LIO2 topics):    -->
+  <!--   /Odometry        : body odometry (from go2_kinematic_sim, -->
+  <!--                      throttled to 10 Hz = MID360 scan rate,  -->
+  <!--                      mimics FAST-LIO2 scan-rate odometry)    -->
+  <!--   /cloud_registered: world-frame registered cloud           -->
+  <!--                      (relay of /pcl_render_node/cloud, which -->
+  <!--                      is published in "world" frame)          -->
+  <!-- Both /grid_map/body_pose and /grid_map/sensor_pose are      -->
+  <!-- remapped to the SAME /Odometry topic.                       -->
+  <!-- ============================================================ -->
+
+  <!-- global topic name used by FSM / controller / render node / kinematic sim -->
+  <param name="body_pose_topic" value="/Odometry" type="str"/>
+
+  <!-- robot initial pose (same as default navi_mode=1 sim) -->
+  <param name="init_x" value="-19.0" type="double"/>
+  <param name="init_y" value="1.0" type="double"/>
+  <param name="init_z" value="0.25" type="double"/>
+
+  <!-- main planner node: FAST-LIO2 style wiring -->
+  <include file="$(find scan_planner)/launch/advanced_param.xml">
+    <arg name="sensor_type" value="lidar"/>
+    <arg name="body_pose_topic" value="/Odometry"/>
+    <arg name="sensor_pose_topic" value="/Odometry"/>
+    <arg name="cloud_topic" value="/cloud_registered"/>
+    <arg name="cloud_is_world" value="true"/>
+    <arg name="depth_topic" value="/camera/aligned_depth_to_color/image_raw"/>
+    <arg name="cx" value="321.04638671875"/>
+    <arg name="cy" value="243.44969177246094"/>
+    <arg name="fx" value="387.229248046875"/>
+    <arg name="fy" value="387.229248046875"/>
+    <!-- true => grid_map/need_extrinsic=true, i.e. real-robot setting where
+         /Odometry is body pose and the hardcoded body->lidar extrinsic moves
+         the raycast origin to the lidar. -->
+    <arg name="is_real_world" value="true"/>
+    <arg name="navi_mode" value="1"/>
+  </include>
+
+  <!-- FAST-LIO2 publishes /Odometry at scan rate (~10 Hz for MID360);
+       odom_rate can be lowered to stress-test pose frequency -->
+  <arg name="odom_rate" default="10.0"/>
+
+  <!-- trajectory tracking + simulated robot (odometry publisher) -->
+  <node pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
+  <node pkg="scan_planner" name="go2_kinematic_sim" type="go2_kinematic_sim" output="screen">
+    <param name="sim_rate" value="$(arg odom_rate)"/>
+  </node>
+
+  <!-- go2 model / gait (visualization, same as run.launch) -->
+  <param name="robot_description" textfile="$(find go2_description)/urdf/go2_description.urdf"/>
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="go2_robot_state_publisher" output="screen"/>
+  <node pkg="scan_planner" name="go2_gait_publisher" type="go2_gait_publisher" output="screen"/>
+
+  <!-- simulator: mock map + local sensing. is_real_world=false here only
+       controls simulator.xml internal (mockamap/render nodes); planner side
+       is configured above with is_real_world=true. -->
+  <include file="$(find scan_planner)/launch/simulator.xml">
+    <arg name="is_real_world" value="false"/>
+    <arg name="navi_mode" value="1"/>
+    <arg name="sensor_type" value="lidar"/>
+  </include>
+
+  <!-- mimic FAST-LIO2: /cloud_registered = world-frame registered scan -->
+  <node pkg="topic_tools" type="relay" name="fastlio_cloud_relay"
+        args="/pcl_render_node/cloud /cloud_registered"/>
+</launch>
