@@ -10,4 +10,7 @@ export PYTHONPATH="/opt/ros/noetic/lib/python3/dist-packages:${PYTHONPATH}"
 # Timer 线程异常只上 stderr 且缓冲，线程死掉后日志无痕——必须 UNBUFFERED 才能看到
 export PYTHONUNBUFFERED=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec /home/pumpkin-db/miniconda3/envs/ariadne/bin/python "$SCRIPT_DIR/scripts/rl_planner.py"
+# "$@" 必须透传：roslaunch 把 remap（如 /state_estimation:=/quad_0/body_pose）和
+# __name 放在 argv 里，丢了它们节点会订阅字面量话题、launch 私有参数全部落空
+# （2026-08-24 redo_run1 教训：节点卡死在等图循环、参数全走代码默认值）
+exec /home/pumpkin-db/miniconda3/envs/ariadne/bin/python "$SCRIPT_DIR/scripts/rl_planner.py" "$@"

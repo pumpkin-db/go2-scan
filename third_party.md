@@ -121,7 +121,9 @@ SCAN navi_mode=3（替代官方 waypoint follower；同样裸读坐标）
 - conda activate 本机崩 → run_planner.sh 用绝对路径 python
 - 系统 python3 无 torch、conda base py3.13 进不了 ROS → ariadne env(py3.8 + torch 2.3.1cpu + scikit-image + rospkg)
 - PYTHONPATH 只挂 /opt/ros/noetic/lib/python3/dist-packages，禁挂系统 dist-packages（numpy ABI 冲突）
+- **包装脚本 exec python 时必须带 `"$@"`**：roslaunch 把 remap 与 __name 放 argv；漏掉则节点订阅字面量话题、launch 私有参数全落空（redo_run1 实录：节点卡死等图循环、sensor_range 走默认 20 而非 5）。上游 init_node 是 anonymous=True，私有参数命名空间依赖 argv 正确透传
 - 权重定位走 rospkg（rl_planner.py:165）→ ROS_PACKAGE_PATH 必须含 ariadne/src
+- kill_all_sim.sh 的复核 pgrep 会匹配到「命令行文本里含同款字面量」的调用方自身——不要把含进程名的 grep/pgrep 写在同一命令行里跑它
 
 ## 启动
 
