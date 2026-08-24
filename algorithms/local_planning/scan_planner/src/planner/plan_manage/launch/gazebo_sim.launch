@@ -9,6 +9,10 @@
 
   <arg name="world_file" default="$(env HOME)/claude/raicom/go2-scan/simulation/worlds/indoor_1.world"/>
   <arg name="navi_mode" default="1"/>
+  <!-- 全局决策层选择（须在顶部声明：navi_mode_eff 与下方 include 都要用）。
+       ariadne 时 navi_mode 自动切 3（/initial_path 模式），tare 时用 navi_mode 原值 -->
+  <arg name="global_planner" default="tare"/>
+  <arg name="navi_mode_eff" value="$(eval '3' if global_planner != 'tare' else navi_mode)"/>
   <arg name="init_x" default="-7.5"/>
   <arg name="init_y" default="0.5"/>
   <arg name="init_z" default="0.25"/>
@@ -44,14 +48,21 @@
     <param name="lidar_z" value="0.2077"/>
   </node>
 
+  <!-- 3b. 点云近距过滤：剔除传感器原点附近的自体回波/零程退化点（否则污染下游占据地图，
+       ARiADNE×SCAN 地图矛盾 → 站桩死锁，见 third_party.md 2026-08-22）。
+       下游统一吃 /mid360_points_clean；原始 /mid360_points 保留供对比调试。 -->
+  <node pkg="go2_bridge" name="cloud_range_filter" type="cloud_range_filter.py" output="screen">
+    <param name="min_range" value="0.7"/>
+  </node>
+
   <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换） -->
   <include file="$(find scan_planner)/launch/advanced_param.xml">
     <arg name="is_real_world" value="false"/>
-    <arg name="navi_mode" value="$(arg navi_mode)"/>
+    <arg name="navi_mode" value="$(arg navi_mode_eff)"/>
     <arg name="sensor_type" value="lidar"/>
     <arg name="body_pose_topic" value="/quad_0/body_pose"/>
     <arg name="sensor_pose_topic" value="/quad_0/lidar_pose"/>
-    <arg name="cloud_topic" value="/mid360_points"/>
+    <arg name="cloud_topic" value="/mid360_points_clean"/>
     <arg name="cloud_is_world" value="true"/>
     <arg name="depth_topic" value="/camera/aligned_depth_to_color/image_raw"/>
     <arg name="cx" value="321.04638671875"/>
@@ -84,11 +95,92 @@
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策） -->
   <include file="$(env HOME)/claude/raicom/go2-scan/simulation/elevation/elevation.launch"/>
 
-  <!-- 10. TARE 全局探索决策层（配准桥 + 决策节点 + goal 桥：way_point→/move_base_simple/goal，navi_mode=1 跟踪单点） -->
-  <node pkg="go2_bridge" name="tare_bridge" type="tare_bridge.py" output="screen"/>
-  <node pkg="tare_planner" type="tare_planner_node" name="tare_planner_node" output="screen" ns="sensor_coverage_planner">
-    <rosparam command="load" file="$(find tare_planner)/config/go2.yaml"/>
-  </node>
-  <node pkg="go2_bridge" name="tare_goal_bridge" type="tare_goal_bridge.py" output="screen"/>
-  <node pkg="go2_bridge" name="navigation_boundary_publisher" type="navigation_boundary_publisher.py" output="screen"/>
+  <!-- 10. 全局探索决策层（决定"往哪探索"）。
+       global_planner := tare    -> TARE（默认）：/way_point -> /move_base_simple/goal（navi_mode=1 追单点）
+                       := ariadne -> ARiADNE（A2 架构，2026-08-24 重做）：
+                            世界系点云+位姿 -> sensorScanGeneration 转回传感器系+发 TF map→sensor_at_scan
+                            -> octomap(frame_id=map) 射线从真实传感器位置发出
+                            -> /projected_map -> rl_planner -> /way_point
+                            -> ariadne_goal_bridge 包装成 Path -> /initial_path -> SCAN navi_mode=3 局部规划。
+                          （旧版直喂世界系点云 + frame_id=world 导致 octomap 射线原点=(0,0,0)，地图穿墙，
+                            见 third_party.md A2 重做段）
+       navi_mode 自动联动：ariadne 时强制为 3；tare 时用 navi_mode 参数（默认 1）。
+       运行 ARiADNE：bash simulation/launch_gazebo_sim.sh global_planner:=ariadne -->
+  <group if="$(eval global_planner == 'tare')">
+    <!-- TARE：world 点云 -> /registered_scan + /state_estimation_at_scan -> 决策 -> /way_point -->
+    <node pkg="go2_bridge" name="tare_bridge" type="tare_bridge.py" output="screen"/>
+    <node pkg="tare_planner" type="tare_planner_node" name="tare_planner_node" output="screen" ns="sensor_coverage_planner">
+      <rosparam command="load" file="$(find tare_planner)/config/go2.yaml"/>
+    </node>
+    <node pkg="go2_bridge" name="navigation_boundary_publisher" type="navigation_boundary_publisher.py" output="screen"/>
+    <!-- TARE 出口：/way_point -> /move_base_simple/goal（navi_mode=1 追单点） -->
+    <node pkg="go2_bridge" name="tare_goal_bridge" type="tare_goal_bridge.py" output="screen"/>
+  </group>
+
+  <group unless="$(eval global_planner == 'tare')">
+    <!-- 官方正确模式（CMU env 2026-08-23 实测验证）：世界系点云必须先转回传感器系再喂 octomap，
+         否则 octomap 用 TF(map→cloud_frame) 定位射线原点，frame 相同时原点=(0,0,0)。 -->
+    <node pkg="sensor_scan_generation" type="sensorScanGeneration" name="sensor_scan_generation" output="screen">
+      <remap from="/registered_scan" to="/mid360_points_clean"/>
+      <remap from="/state_estimation" to="/quad_0/body_pose"/>
+    </node>
+
+    <node pkg="octomap_server" type="octomap_server_node" name="octomap" output="screen">
+      <remap from="cloud_in" to="/sensor_scan"/>
+      <param name="frame_id" value="map"/>
+      <param name="base_frame_id" value="sensor_at_scan"/>
+      <param name="resolution" value="0.4"/>
+      <!-- 2D 切片窗口 [0.2, 0.8]m（用户定）：地面回波(z<0.2)与高处置物(z>0.8，如桌面)不投影成占据，
+           桌下可通行；机身自可见主要由 cloud_range_filter(min_range=0.7) 负责。map 系数值≡world 系。 -->
+      <param name="occupancy_min_z" type="double" value="0.2"/>
+      <param name="occupancy_max_z" type="double" value="0.8"/>
+      <!-- max_range=5m（用户定）：射线 5m 内才算已探索，收紧"探索完成"判定 -->
+      <param name="sensor_model/max_range" value="5.0"/>
+      <param name="sensor_model/hit" type="double" value="1"/>
+      <!-- miss 0.45->0.35：加速陈旧占据衰减，配合近距过滤尽快洗掉污染格 -->
+      <param name="sensor_model/miss" type="double" value="0.35"/>
+      <param name="sensor_model/max" type="double" value="1"/>
+      <param name="sensor_model/min" type="double" value="0.2"/>
+    </node>
+
+    <node pkg="rl_planner" type="run_ariadne.sh" name="rl_planner" output="screen" cwd="node">
+      <!-- 只暴露最小必要参数，其余用包内 parameter.py 默认值；调优改这里 -->
+      <param name="node_resolution" value="2.0"/>
+      <!-- sensor_range=12 与 octomap max_range(5m) 解耦：前者只影响 rl_planner 内部的
+           效用视野半径(×factor)和节点生成半径，不影响"已探索"标记。
+           设 5 时节点只长在轨迹周边 5m 内，而前沿环常在 >5m 外（门洞阈值），
+           所有节点永远看不到前沿 → 全图零效用 → 停滞冻结（run7 实录）。
+           上游训练用 20m，取 12 兼顾视野与算力。 -->
+      <param name="sensor_range" value="12.0"/>
+      <!-- utility_range_factor 1.0（上游 0.5）：效用半径 = sensor_range×factor。
+           max_range=5m 时前沿环在离轨迹约 5m 处；若半径只有 2.5m（0.5×5），
+           所有节点都看不到前沿 → key_utility 全零 → 误判"探索完成"
+           （2026-08-24 首跑实录：仅探索 ~16% 即停）。取 1.0 让效用视野覆盖整个已标定圆盘。 -->
+      <param name="utility_range_factor" value="1.0"/>
+      <!-- min_utility 0（上游默认 3）：node_manager.py:596 用 <= 比较——min_utility=1 时
+           「只看到 1 个前沿」的节点也被清零。max_range=5m 下已探区小、边界锯齿密，
+           单节点可见前沿常只有 0~1 个（unknown 算视线碰撞，utils.py:255），设 1 会导致
+           全图效用恒零 → 33 秒即误判探索完成（2026-08-24 run2 实录）。取 0：
+           看到 ≥1 个前沿即有效用，「完成」仍要求全图无任何可见前沿。 -->
+      <param name="min_utility" type="int" value="0"/>
+      <!-- los_ignore_unknown（go2-scan 四足适配）：效用归因视线忽略 unknown 阻挡。
+           max_range=5m 下门洞前沿只有 1~2 格且紧邻门框锯齿格，unknown-阻挡视线把
+           全部门洞前沿判不可见 → 全图 utility 恒零 → ~33s 误判探索完成
+           （run2/run4 实录；离线复现：46 对视线 46 被挡）。只影响能见度评估，
+           路径有效性检查不受影响。 -->
+      <param name="los_ignore_unknown" value="true"/>
+      <!-- 停滞式完成判定（go2-scan 四足适配）：效用全零 且 地图连续 N 秒无增长 才算
+           探索完成；否则继续探索。防真实投影下门洞前沿不可见导致的过早冻结
+           （run2/run4/run5 实录）。 -->
+      <param name="stagnant_done_sec" value="20.0"/>
+      <param name="map_resolution" value="0.4"/>
+      <param name="replanning_frequency" value="2.5"/>
+      <remap from="/state_estimation" to="/quad_0/body_pose"/>
+    </node>
+
+    <!-- A2 出口：/way_point -> /initial_path（SCAN navi_mode=3），带去重门控 -->
+    <node pkg="go2_bridge" name="ariadne_goal_bridge" type="ariadne_goal_bridge.py" output="screen">
+      <param name="repub_dist" value="1.0"/>
+    </node>
+  </group>
 </launch>

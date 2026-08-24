@@ -40,9 +40,12 @@ class GazeboBridge:
                       self.model_name)
 
     def joint_cb(self, msg):
-        # 30Hz 节流（go2_gait_publisher 发 60Hz，set_model_configuration 是 service 调，别太频）
+        # 10Hz 节流（go2_gait_publisher 发 60Hz，set_model_configuration 是 service 调）。
+        # 曾用 30Hz：2026-08-22 实测高负载下 gzserver 服务连接被重置（ConnectionResetError: [Errno 104]），
+        # 随后 livox 插件输出退化成传感器原点一团点（整帧 10000 点全在 <0.55m、z=传感器高度），
+        # 疑似服务风暴拖垮 gzserver 内部。降到 10Hz 降压；若复现需查插件本身。
         now = rospy.Time.now().to_sec()
-        if now - self.last_joint_sync < 1.0 / 30.0:
+        if now - self.last_joint_sync < 1.0 / 10.0:
             return
         self.last_joint_sync = now
         # 只取 12 个 revolute 腿关节（hip/thigh/calf），顺序按 joint_states 原样

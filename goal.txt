@@ -1,0 +1,13 @@
+WARNING: may be using simulated time
+subscribed to [/move_base_simple/goal]
+no new messages
+average rate: 2.469
+	min: 0.400s max: 0.410s std dev: 0.00500s window: 3
+average rate: 2.479
+	min: 0.400s max: 0.410s std dev: 0.00471s window: 4
+average rate: 2.500
+	min: 0.390s max: 0.410s std dev: 0.00632s window: 6
+average rate: 2.500
+	min: 0.390s max: 0.410s std dev: 0.00577s window: 7
+average rate: 2.473
+	min: 0.390s max: 0.430s std dev: 0.01178s window: 8
