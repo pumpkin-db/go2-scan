@@ -87,7 +87,22 @@ ARiADNE 是纯 2D 决策层：吃 2D 占据栅格 + 机器人 x/y，吐航点。
 2. **state_estimation 错接 body_pose**：官方该输入语义是雷达原点位姿；接机体中心使 octomap 射线原点系统性偏 ~0.4m（x 0.2 + z 0.21）。应接 /quad_0/lidar_pose。
 3. **对抗性补丁病**：miss 0.45→0.35、utility_factor 0.5→1.0、min_utility 3→0、los_ignore_unknown、停滞判定、恢复导航……全是给「过早完成」打的标补丁，而病根之一正是上面两条地图错位。教训：**先修架构再调参数；参数偏离官方必须有当轮证据**。
 
-另：scan_map 漂移与该批改动无关（逐行比对未动其链路）——嫌疑是 livox 退化帧（gzserver 高负载下整帧退化为平环/贴脸团）+ add-only 累积器永久污染，待专项取证。
+另：scan_map 漂移与该批改动无关（逐行比对未动其链路）。幻影墙根因已实锤并修复（2026-08-24，run9 验证幻影 0 格）：
+
+**幻影墙根因链（源码级+探针实证）**
+1. 我们的场景有无限大 ground_plane，官方 CMU 场景没有（模型列表对比实证）。
+2. more_complex_env_0 的薄墙/窗户会泄漏雷达射线打到室外地面；octomap_server 源码（kinetic-devel OctomapServer.cpp insertScan）：filter_ground=false 时所有端点一律标占据，无 z 带检查。
+3. 地面端点 z≈0 → 体素中心 0.2（分辨率 0.4），投影条件「中心±半格与带相交」使 [0.2,0.8]/[0,1.2] 都包含它 → 建筑外围成片黑格。
+4. 黑环封住自由空间边界 → rl_planner 效用归零 → 过早完成（8~10 航点即停）。
+5. 曾误诊「livox 退化帧」（z_std≈0 帧）——实为 MID360 非重复扫描的正常单仰角环形态；据此加的帧级门控会误杀合法观测，已撤除。
+
+**修复配方（run9 验证：幻影 0/428 格，自由:占据=1433:428≈3.4:1 达官方级，狗 54 航点未假完成）**
+- 世界文件 indoor_1.world：无限 ground_plane → 有限地板 box（58×38m 覆盖建筑足迹）
+- octomap：`occupancy_min_z=0.4`（关键一刀：地面端点的体素中心 0.2 投不进带，≥0.4m 真障碍经中心 0.6 体素照常投影）；max_z=1.2、收发耦合 7m 回官方跑通现场值
+- 辅助：`filter_ground=true` + `base_frame_id=world`（RANSAC 在地面点占比仅 4.7% 时不可靠，只作辅助层）
+- 教训：诊断时「z_std≈0 帧」「截断端点」等假设均被实验否决——每一步都必须用探针数据背书
+
+诊断工具：tools/probe_occ_vs_gt.py（GT对照）、probe_map_once.py（快照）、probe_voxel_heights.py（体素高度）、probe_dynrange.py / probe_toggle2.py（动态参数 A/B）、probe_roundtrip.py（变换往返验证）、probe_live_support.py、probe_cloud_regions.py、probe_primitives.py、probe_frame_health.py。
 
 ### 正确架构（重做版，2026-08-24）
 

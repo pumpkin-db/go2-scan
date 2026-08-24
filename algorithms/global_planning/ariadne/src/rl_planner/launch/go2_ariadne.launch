@@ -16,7 +16,11 @@
   <!--      z 切片 [0.2,0.8]。不再预埋对抗性补丁。                      -->
   <!-- ============================================================ -->
 
-  <arg name="sensor_range" default="5.0"/>
+  <!-- 2026-08-24 官方对齐实验（run9）：z 带与收发量程整体回到官方 envB 跑通现场
+       （z[0,1.2]、收发耦合 7m）。此前用户偏好(5m/[0.2,0.8])与解耦(12m)在幻影墙问题
+       未消前无法评估，先复现官方配方再逐项回收偏好。 -->
+  <arg name="sensor_range" default="7.0"/>
+  <arg name="planner_sensor_range" default="7.0"/>
   <arg name="map_resolution" default="0.4"/>
   <arg name="node_resolution" default="2.0"/>
 
@@ -38,12 +42,21 @@
   <node pkg="octomap_server" type="octomap_server_node" name="octomap" output="screen">
     <remap from="cloud_in" to="/sensor_scan"/>
     <param name="frame_id" value="map"/>
-    <param name="base_frame_id" value="sensor_at_scan"/>
+    <!-- 地面过滤（幻影墙根治，2026-08-24）：我们的场景有无限大 ground_plane，官方场景没有——
+         这是与官方跑通版唯一的输入差异。地面回波若不过滤，端点会以体素中心 z=0.2 标占据
+         （恰在带内），整片可见地板变黑。filter_ground=true 时 RANSAC 把 z≈0 平面归为
+         「只清空不占据」；base_frame_id 必须设为 world：该参数只服务地面过滤的高度判定
+         （源码 filterGroundPlane 在 base 系里要求平面 |d|<0.07 才算地面，用雷达系会因
+         雷达离地 0.458m 而永远判不上）。 -->
+    <param name="base_frame_id" value="world"/>
+    <param name="filter_ground" value="true"/>
     <param name="resolution" value="$(arg map_resolution)"/>
-    <!-- z∈[0.2,0.8]（用户定）：四足有效障碍带；地面回波与高处置物不投影，
-         桌下可通行。机身自可见由 cloud_range_filter(min_range=0.7) 负责。 -->
-    <param name="occupancy_min_z" type="double" value="0.2"/>
-    <param name="occupancy_max_z" type="double" value="0.8"/>
+    <!-- z∈[0.4,1.2]（run9）：min_z=0.4 是幻影墙的关键修法——地面端点落在体素中心
+         z=0.2（分辨率0.4），投影条件「中心+半格 > min_z」在 min_z≥0.4 时恒假，
+         地面/庭院回波无论 RANSAC 成败都进不了黑格；≥0.4m 的真实障碍经中心0.6体素
+         照常投影。filter_ground 保留作辅助（其 RANSAC 在地面点占比<5% 时不可靠）。 -->
+    <param name="occupancy_min_z" type="double" value="0.4"/>
+    <param name="occupancy_max_z" type="double" value="1.2"/>
     <!-- max_range=5m（用户定，收紧「已探索」判定）。官方 indoor 默认 20，
          本机官方 env 用 5 也完整跑通（envB.log 正常 Completed）。
          注意与 rl_planner sensor_range 保持同值（官方即同 arg 耦合）；
@@ -64,7 +77,7 @@
     <remap from="/state_estimation" to="/quad_0/body_pose"/>
     <param name="publish_graph" type="bool" value="true"/>
     <param name="node_resolution" value="$(arg node_resolution)"/>
-    <param name="sensor_range" value="$(arg sensor_range)"/>
+    <param name="sensor_range" value="$(arg planner_sensor_range)"/>
     <param name="utility_range_factor" value="0.5"/>
     <param name="min_utility" type="int" value="3"/>
     <param name="frontier_downsample_factor" value="1"/>

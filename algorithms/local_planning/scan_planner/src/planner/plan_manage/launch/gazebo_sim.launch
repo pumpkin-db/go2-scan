@@ -82,8 +82,12 @@
     <param name="downsample_res" value="0.1"/>
   </node>
 
-  <!-- 7. 累积扫描点云（scan_map）：mid360 -> 世界系累积 -->
-  <node pkg="go2_bridge" name="scan_cloud_accumulator" type="scan_cloud_accumulator.py" output="screen"/>
+  <!-- 7. 累积扫描点云（scan_map）：mid360 -> 世界系累积。
+       输入随分支切换：ariadne 吃门控后的 _clean（退化帧不进累积图，防漂移）；
+       tare 保持原始 /mid360_points（基线行为不变）。 -->
+  <node pkg="go2_bridge" name="scan_cloud_accumulator" type="scan_cloud_accumulator.py" output="screen">
+    <remap from="/mid360_points" to="$(arg scan_cloud)"/>
+  </node>
 
   <!-- 8. RViz（GPU 硬件渲染：WSL2 的 OpenGL 走 D3D12 直通 NVIDIA，无需软件渲染） -->
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default.rviz"/>

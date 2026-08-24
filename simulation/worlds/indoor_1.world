@@ -18,15 +18,20 @@
         <falloff>0</falloff>
       </spot>
     </light>
-    <model name='ground_plane'>
+    <!-- 2026-08-24 幻影墙根治：无限大 ground_plane 换成只覆盖建筑足迹的有限地板。
+         原因：more_complex_env_0 的薄墙/窗户会泄漏雷达射线，射到无限地面的端点
+         (z≈0→体素中心0.2恰在octomap占据带[0.2,0.8]内) 在建筑外围形成黑色幻影环，
+         封住自由空间边界 → ARiADNE 看不到前沿 → 效用归零 → 过早完成。
+         官方 CMU 场景没有无限地面所以无此问题。室内地面保留供 SCAN/高程图使用。 -->
+    <model name='ground_finite'>
+      <pose>18.3 13.4 -0.05 0 -0 0</pose>
       <static>1</static>
       <link name='link'>
         <collision name='collision'>
           <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>100 100</size>
-            </plane>
+            <box>
+              <size>58 38 0.1</size>
+            </box>
           </geometry>
           <surface>
             <contact>
@@ -49,10 +54,9 @@
         <visual name='visual'>
           <cast_shadows>0</cast_shadows>
           <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>100 100</size>
-            </plane>
+            <box>
+              <size>58 38 0.1</size>
+            </box>
           </geometry>
           <material>
             <script>
