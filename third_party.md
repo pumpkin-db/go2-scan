@@ -9,6 +9,7 @@
 | 仓库内位置 | 上游仓库 | commit | 作用 |
 |-----------|---------|--------|------|
 | `algorithms/global_planning/tare/` | https://github.com/caochao39/tare_planner | `44500592b861` | 全局探索决策（TARE，CMU） |
+| `algorithms/global_planning/ariadne/src/rl_planner/` | https://github.com/marmotlab/ARiADNE-ROS-Planner | `773ebcf` | 全局探索决策（ARiADNE，RL+图注意力；scripts 为官方原版零改动） |
 | `algorithms/local_planning/scan_planner/` | https://github.com/wuyi2121/SCAN-Planner | `348e8a590a50` | 局部轨迹规划（SCAN-Planner，SJTU） |
 | `algorithms/mapping/elevation_mapping/` | 见下表（多包 workspace） | — | 2.5D 高程图 |
 
@@ -38,7 +39,7 @@
 
 以下仓库在选型阶段评估过、当前**未采用**，保留在 `~/claude/raicom/new_algorithm/`（未迁入 go2-scan），后续若启用再按上面规范迁入：
 
-- ARiADNE、FAEL、FUEL、UFEP-Released、TravExplorer、gbplanner_ros、ego-planner、stc_ws、LKH-3.0.14、nlopt（gbplanner 依赖）、HPHS（场景制作工具）
+- FAEL、FUEL、UFEP-Released、TravExplorer、gbplanner_ros、ego-planner、stc_ws、LKH-3.0.14、nlopt（gbplanner 依赖）、HPHS（场景制作工具）
 
 ## 编译
 
@@ -52,11 +53,75 @@ cd ~/claude/raicom/go2-scan/algorithms/global_planning/tare && catkin_make
 # 3. 高程图 workspace（elevation_mapping + kindr 等）
 cd ~/claude/raicom/go2-scan/algorithms/mapping/elevation_mapping && catkin_make
 
-# 4. 仿真底座 workspace（velodyne/livox 插件）
-cd ~/claude/raicom/go2-scan/simulation/cmu_env && catkin_make -DCATKIN_WHITELIST_PACKAGES="velodyne_description;velodyne_gazebo_plugins;livox_laser_simulation"
+# 4. 仿真底座 workspace（velodyne/livox 插件 + sensor_scan_generation，后者供 ARiADNE 链用）
+cd ~/claude/raicom/go2-scan/simulation/cmu_env && catkin_make -DCATKIN_WHITELIST_PACKAGES="velodyne_description;velodyne_gazebo_plugins;livox_laser_simulation;sensor_scan_generation"
 ```
 
 > go2_bridge（`integration/go2_bridge/`）是纯 Python 包，不编译，靠 `launch_gazebo_sim.sh` 里 `ROS_PACKAGE_PATH` 指向 `integration/` 被 rospack 找到。
+> rl_planner（`algorithms/global_planning/ariadne/src/rl_planner/`）同为纯 Python 包不编译，同样靠 `ROS_PACKAGE_PATH` 直指 `ariadne/src`；运行依赖 conda env `ariadne`（py3.8 + torch cpu），入口 `run_planner.sh`。
+
+## ARiADNE（go2-scan 全局探索决策层）
+
+### 官方数据契约（源码级核实，2026-08-24）
+
+ARiADNE 是纯 2D 决策层：吃 2D 占据栅格 + 机器人 x/y，吐航点。官方 README 明确它需要三个外部伙伴：Lidar SLAM（里程计+点云）、建图（octomap）、waypoint follower。
+
+| 话题 | 类型 | frame | 频率 | 语义 |
+|---|---|---|---|---|
+| /state_estimation（入） | Odometry | header=map, child=sensor | CMU 仿真 200Hz | **传感器(lidar)原点位姿**，非机体中心 |
+| /projected_map（入） | OccupancyGrid | map | latched | octomap 投影；值 −1/0/100；origin=八叉树包围盒角点动态长大 |
+| /way_point（出） | PointStamped | map | ≤2.5Hz | 下游裸读 x/y |
+
+硬性机制：
+- rl_planner **零 TF 查询、零 frame 校验**、零时间同步——把 map.origin 与位姿当裸数字混算（utils.py 断言机器人在图包围盒内）。数值一致性由接入方单方面保证。
+- octomap_server 的射线起点 = TF(frame_id → 点云header.frame) 平移；有 tf::MessageFilter 门控（点云 stamp 时刻 TF 不可解则扣帧 → 地图空/滞后）。
+- 官方链路单一全局系：CMU 把仿真器世界坐标直接命名 map；**map≡world 数值恒等是构造出来的**。
+- sensorScanGeneration（CMU 包）：ApproximateTime(100) 同步 registered_scan+state_estimation → /sensor_scan(frame=sensor_at_scan) + 点云 stamp 时刻广播 TF map→sensor_at_scan。
+- 分辨率三处一致：octomap resolution = rl_planner map_resolution = 0.4。
+
+### 第一次 A2 接入失败解剖（2026-08-24，完整快照在 archive/ariadne-a2-attempt1 分支）
+
+症状：RViz 里 projected_map 悬空错位「完全不对」；vendored py 打满补丁成屎山。根因三层：
+
+1. **frame 断裂（主因）**：octomap 设 frame_id=map，但全系统（RViz Fixed Frame、SCAN、里程计）都在 world 系，无任何 TF 桥 → 地图悬空。修法 = 一条恒等 static TF map→world（官方有真 map 帧所以没这问题，我们没有）。
+2. **state_estimation 错接 body_pose**：官方该输入语义是雷达原点位姿；接机体中心使 octomap 射线原点系统性偏 ~0.4m（x 0.2 + z 0.21）。应接 /quad_0/lidar_pose。
+3. **对抗性补丁病**：miss 0.45→0.35、utility_factor 0.5→1.0、min_utility 3→0、los_ignore_unknown、停滞判定、恢复导航……全是给「过早完成」打的标补丁，而病根之一正是上面两条地图错位。教训：**先修架构再调参数；参数偏离官方必须有当轮证据**。
+
+另：scan_map 漂移与该批改动无关（逐行比对未动其链路）——嫌疑是 livox 退化帧（gzserver 高负载下整帧退化为平环/贴脸团）+ add-only 累积器永久污染，待专项取证。
+
+### 正确架构（重做版，2026-08-24）
+
+```
+/mid360_points ─cloud_range_filter(0.7m)─> /mid360_points_clean ─┐
+                                                                 ├ ApproximateTime(100)
+/quad_0/lidar_pose(≈官方 state_estimation 语义) ─────────────────┘  ↓ sensorScanGeneration
+                                    ├ /sensor_scan(sensor_at_scan) + TF map→sensor_at_scan
+static TF: map→world 恒等 ──┐        ↓
+                            └──> octomap_server[frame_id=map, res0.4, z∈0.2-0.8, max_range5, miss0.45]
+                                      ↓ /projected_map(header=map)
+/projected_map + /quad_0/body_pose(remap 成 /state_estimation) ─> rl_planner（官方原版一字不改）
+                                      ↓ /way_point(frame=map)
+ariadne_goal_bridge（唯一自研胶水，去重>1m） ─> /initial_path(Path[robot_xy,wp], world)
+                                      ↓
+SCAN navi_mode=3（替代官方 waypoint follower；同样裸读坐标）
+```
+
+参数基准 = 官方 indoor launch 全套（factor 0.5 / min_utility 3 / replanning 2.5 / node_resolution 2.0），仅两处用户决策覆盖：octomap max_range 20→5（收紧已探索判定）、z 切片 [0,1.2]→[0.2,0.8]（四足有效障碍带）。链路配置在包内 `launch/go2_ariadne.launch`。
+
+### 保留思路库（第一次接入的遗产，按需启用，不再预埋）
+
+1. **停滞式完成判定**：「效用全零 且 地图 N 秒无增长」才算完成——真实投影下门洞前沿可能不可见，纯 utility 判完成会假停。若重做版再现假 Completed/假停滞，这是第一杠杆。
+2. **目标消毒/恢复导航**：粗分辨率上游目标 vs 精细下游规划器的接口契约问题（is_free_with_margin/find_approach_point 思路），与新算法无关，应做成独立桥模块。
+3. **等图忙等让出 GIL**：`while None: pass` 会饿死回调线程自锁，改 sleep。
+4. **Timer 回调兜底**：rospy Timer 线程异常只上 stderr 且缓冲，死掉后日志无痕；try/except + PYTHONUNBUFFERED 是可观测性底线（run_planner.sh 已带 UNBUFFERED）。
+5. **效用视野三杠杆**（出现「全图零效用/过早冻结」时依次查）：sensor_range 与 octomap max_range 解耦、utility_range_factor、min_utility 的 `<=` 语义。
+
+### 环境坑清单（运行依赖）
+
+- conda activate 本机崩 → run_planner.sh 用绝对路径 python
+- 系统 python3 无 torch、conda base py3.13 进不了 ROS → ariadne env(py3.8 + torch 2.3.1cpu + scikit-image + rospkg)
+- PYTHONPATH 只挂 /opt/ros/noetic/lib/python3/dist-packages，禁挂系统 dist-packages（numpy ABI 冲突）
+- 权重定位走 rospkg（rl_planner.py:165）→ ROS_PACKAGE_PATH 必须含 ariadne/src
 
 ## 启动
 

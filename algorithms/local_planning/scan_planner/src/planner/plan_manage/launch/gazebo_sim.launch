@@ -9,6 +9,11 @@
 
   <arg name="world_file" default="$(env HOME)/claude/raicom/go2-scan/simulation/worlds/indoor_1.world"/>
   <arg name="navi_mode" default="1"/>
+  <!-- 全局决策层选择：tare（默认，行为与 2bf137d 基线完全一致）| ariadne。
+       ariadne 时 navi_mode 自动切 3（SCAN /initial_path 模式）、点云源切 _clean -->
+  <arg name="global_planner" default="tare"/>
+  <arg name="navi_mode_eff" value="$(eval '3' if global_planner != 'tare' else navi_mode)"/>
+  <arg name="scan_cloud" value="$(eval '/mid360_points_clean' if global_planner != 'tare' else '/mid360_points')"/>
   <arg name="init_x" default="-7.5"/>
   <arg name="init_y" default="0.5"/>
   <arg name="init_z" default="0.25"/>
@@ -44,14 +49,16 @@
     <param name="lidar_z" value="0.2077"/>
   </node>
 
-  <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换） -->
+  <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换）
+       点云源随分支切换：tare 用原始 /mid360_points（基线行为）；ariadne 用近距过滤后的
+       /mid360_points_clean（octomap 链与 SCAN 同源，避免自体回波进占据地图）。 -->
   <include file="$(find scan_planner)/launch/advanced_param.xml">
     <arg name="is_real_world" value="false"/>
-    <arg name="navi_mode" value="$(arg navi_mode)"/>
+    <arg name="navi_mode" value="$(arg navi_mode_eff)"/>
     <arg name="sensor_type" value="lidar"/>
     <arg name="body_pose_topic" value="/quad_0/body_pose"/>
     <arg name="sensor_pose_topic" value="/quad_0/lidar_pose"/>
-    <arg name="cloud_topic" value="/mid360_points"/>
+    <arg name="cloud_topic" value="$(arg scan_cloud)"/>
     <arg name="cloud_is_world" value="true"/>
     <arg name="depth_topic" value="/camera/aligned_depth_to_color/image_raw"/>
     <arg name="cx" value="321.04638671875"/>
@@ -84,11 +91,39 @@
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策） -->
   <include file="$(env HOME)/claude/raicom/go2-scan/simulation/elevation/elevation.launch"/>
 
-  <!-- 10. TARE 全局探索决策层（配准桥 + 决策节点 + goal 桥：way_point→/move_base_simple/goal，navi_mode=1 跟踪单点） -->
-  <node pkg="go2_bridge" name="tare_bridge" type="tare_bridge.py" output="screen"/>
-  <node pkg="tare_planner" type="tare_planner_node" name="tare_planner_node" output="screen" ns="sensor_coverage_planner">
-    <rosparam command="load" file="$(find tare_planner)/config/go2.yaml"/>
-  </node>
-  <node pkg="go2_bridge" name="tare_goal_bridge" type="tare_goal_bridge.py" output="screen"/>
-  <node pkg="go2_bridge" name="navigation_boundary_publisher" type="navigation_boundary_publisher.py" output="screen"/>
+  <!-- 10. 全局探索决策层（决定"往哪探索"），global_planner 选择：
+       tare    -> TARE（默认）：way_point -> /move_base_simple/goal（navi_mode=1 追单点）
+       ariadne -> ARiADNE（官方契约重做版，2026-08-24）：
+                  建图+决策链在 rl_planner 包自带 launch 里（go2_ariadne.launch）：
+                  点云转回传感器系+TF -> octomap(frame_id=map, map≡world 数值桥接)
+                  -> /projected_map -> rl_planner(官方原版代码) -> /way_point
+                  -> ariadne_goal_bridge 包装成 Path -> /initial_path -> SCAN navi_mode=3 局部规划。
+                  运行：bash simulation/launch_gazebo_sim.sh global_planner:=ariadne -->
+  <group if="$(eval global_planner == 'tare')">
+    <!-- TARE：world 点云 -> /registered_scan + /state_estimation_at_scan -> 决策 -> /way_point -->
+    <node pkg="go2_bridge" name="tare_bridge" type="tare_bridge.py" output="screen"/>
+    <node pkg="tare_planner" type="tare_planner_node" name="tare_planner_node" output="screen" ns="sensor_coverage_planner">
+      <rosparam command="load" file="$(find tare_planner)/config/go2.yaml"/>
+    </node>
+    <node pkg="go2_bridge" name="navigation_boundary_publisher" type="navigation_boundary_publisher.py" output="screen"/>
+    <!-- TARE 出口：/way_point -> /move_base_simple/goal（navi_mode=1 追单点） -->
+    <node pkg="go2_bridge" name="tare_goal_bridge" type="tare_goal_bridge.py" output="screen"/>
+  </group>
+
+  <group unless="$(eval global_planner == 'tare')">
+    <!-- 近距过滤只在此分支启动：剔除传感器原点附近自体回波/零程退化点，
+         否则污染 octomap 占据。TARE 路径不引入此节点，保持基线行为。 -->
+    <node pkg="go2_bridge" name="cloud_range_filter" type="cloud_range_filter.py" output="screen">
+      <param name="min_range" value="0.7"/>
+    </node>
+
+    <!-- ARiADNE 建图+决策链：sensorScanGeneration + map→world 恒等桥 + octomap_server +
+         rl_planner（官方原版 py）。接线契约依据见包内 launch 注释。 -->
+    <include file="$(find rl_planner)/launch/go2_ariadne.launch"/>
+
+    <!-- A2 出口：/way_point -> /initial_path（SCAN navi_mode=3），去重门控 -->
+    <node pkg="go2_bridge" name="ariadne_goal_bridge" type="ariadne_goal_bridge.py" output="screen">
+      <param name="repub_dist" value="1.0"/>
+    </node>
+  </group>
 </launch>

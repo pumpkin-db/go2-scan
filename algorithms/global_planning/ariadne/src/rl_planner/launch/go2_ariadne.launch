@@ -1,0 +1,80 @@
+<launch>
+  <!-- ============================================================ -->
+  <!-- ARiADNE 建图+决策链（对齐官方契约版，2026-08-24 推倒重来）      -->
+  <!--   官方参考：new_algorithm/ARiADNE-ROS-Planner/src/launch/     -->
+  <!--             rl_planner.launch（本机 CMU env 曾以此完整跑通）    -->
+  <!--                                                              -->
+  <!-- 与上一次失败版的差异（根因见 third_party.md「A2 失败解剖」）：    -->
+  <!--   1. map→world 恒等静态 TF：官方环境有真 map 帧（LIO 发布），    -->
+  <!--      我们的里程计即世界坐标、无 map 帧。上次 octomap frame_id=map -->
+  <!--      导致 RViz 里 projected_map 悬空错位。数值恒等，桥接即可。    -->
+  <!--   2. sensorScanGeneration 的 state_estimation 输入接雷达位姿     -->
+  <!--      /quad_0/lidar_pose：官方该输入语义就是传感器(lidar)原点位姿  -->
+  <!--      （vehicleSimulator z=terrainZ+车高），上次错接机体中心       -->
+  <!--      body_pose，射线原点系统性偏 ~0.4m。                         -->
+  <!--   3. 参数全回官方 indoor 基准；用户决策保留 max_range=5m 与       -->
+  <!--      z 切片 [0.2,0.8]。不再预埋对抗性补丁。                      -->
+  <!-- ============================================================ -->
+
+  <arg name="sensor_range" default="5.0"/>
+  <arg name="map_resolution" default="0.4"/>
+  <arg name="node_resolution" default="2.0"/>
+
+  <!-- map→world 恒等桥（100ms 周期）。octomap/RViz 的 frame 字符串 "map"
+       由此可解析且数值不变；rl_planner 输出 way_point(frame=map) 同样受益。 -->
+  <node pkg="tf" type="static_transform_publisher" name="map_world_bridge"
+        args="0 0 0 0 0 0 1 map world 100"/>
+
+  <!-- 官方包零改动复用：世界系点云转回传感器瞬时系 + 用点云时间戳广播
+       TF map→sensor_at_scan + 发布 /state_estimation_at_scan。
+       ApproximateTime(100) 同步两输入；required 未设（挂了只断地图不断仿真）。 -->
+  <node pkg="sensor_scan_generation" type="sensorScanGeneration" name="sensor_scan_generation" output="screen">
+    <remap from="/registered_scan" to="/mid360_points_clean"/>
+    <remap from="/state_estimation" to="/quad_0/lidar_pose"/>
+  </node>
+
+  <!-- octomap_server：apt 二进制。tf::MessageFilter 门控——点云在其 stamp
+       时刻必须能 TF 到 map，否则被扣住（表现为地图空/滞后）。 -->
+  <node pkg="octomap_server" type="octomap_server_node" name="octomap" output="screen">
+    <remap from="cloud_in" to="/sensor_scan"/>
+    <param name="frame_id" value="map"/>
+    <param name="base_frame_id" value="sensor_at_scan"/>
+    <param name="resolution" value="$(arg map_resolution)"/>
+    <!-- z∈[0.2,0.8]（用户定）：四足有效障碍带；地面回波与高处置物不投影，
+         桌下可通行。机身自可见由 cloud_range_filter(min_range=0.7) 负责。 -->
+    <param name="occupancy_min_z" type="double" value="0.2"/>
+    <param name="occupancy_max_z" type="double" value="0.8"/>
+    <!-- max_range=5m（用户定，收紧「已探索」判定）。官方 indoor 默认 20，
+         本机官方 env 用 5 也完整跑通（envB.log 正常 Completed）。
+         注意与 rl_planner sensor_range 保持同值（官方即同 arg 耦合）；
+         若效用视野病复发，解耦调大后者是已记录的备选杠杆。 -->
+    <param name="sensor_model/max_range" value="$(arg sensor_range)"/>
+    <param name="sensor_model/hit" type="double" value="1"/>
+    <param name="sensor_model/miss" type="double" value="0.45"/>
+    <param name="sensor_model/max" type="double" value="1"/>
+    <param name="sensor_model/min" type="double" value="0.2"/>
+  </node>
+
+  <!-- rl_planner：scripts 为官方原版一字未改（含 checkpoint 权重）。
+       其内部零 TF 查询，把 projected_map.origin 与位姿当裸数字混算——
+       数值一致性由本链路构造保证（里程计≡世界坐标，见 third_party.md）。 -->
+  <node pkg="rl_planner" type="run_planner.sh" name="rl_planner" output="screen" cwd="node">
+    <!-- 决策层要的是机器人所在位置（机体中心即可，x/y 差 <1 格）；
+         与上面建图用的 lidar_pose 分开接，各取所需。 -->
+    <remap from="/state_estimation" to="/quad_0/body_pose"/>
+    <param name="publish_graph" type="bool" value="true"/>
+    <param name="node_resolution" value="$(arg node_resolution)"/>
+    <param name="sensor_range" value="$(arg sensor_range)"/>
+    <param name="utility_range_factor" value="0.5"/>
+    <param name="min_utility" type="int" value="3"/>
+    <param name="frontier_downsample_factor" value="1"/>
+    <param name="map_resolution" value="$(arg map_resolution)"/>
+    <param name="waypoint_threshold" value="2.0"/>
+    <param name="next_waypoint_threshold" value="4.0"/>
+    <param name="hard_update_threshold" value="10.0"/>
+    <param name="frontier_cluster_range" value="10.0"/>
+    <param name="enable_save_mode" value="false"/>
+    <param name="enable_dstarlite" value="false"/>
+    <param name="replanning_frequency" value="2.5"/>
+  </node>
+</launch>

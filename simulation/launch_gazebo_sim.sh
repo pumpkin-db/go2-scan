@@ -33,6 +33,10 @@ export CMAKE_PREFIX_PATH=$TARE/devel:$CMAKE_PREFIX_PATH
 export LD_LIBRARY_PATH=$TARE/devel/lib:$LD_LIBRARY_PATH
 export ROS_PACKAGE_PATH=$TARE/src:$ROS_PACKAGE_PATH
 
+# 5b) 补 ARiADNE 环境（RL 探索决策层：纯 Python，不用 catkin_make，rospack 直指 src/ 即可找到 rl_planner 包）
+ARIADNE=$HOME/claude/raicom/go2-scan/algorithms/global_planning/ariadne
+export ROS_PACKAGE_PATH=$ARIADNE/src:$ROS_PACKAGE_PATH
+
 # 6) go2_bridge（自研胶水，纯 Python，rospack 直指 integration/）
 export ROS_PACKAGE_PATH=$BRIDGE:$ROS_PACKAGE_PATH
 
