@@ -108,6 +108,12 @@ namespace gazebo
     /// \brief organize cloud
     private: bool organize_cloud_;
 
+    /// \brief 2026-08-25 go2-scan 增补：输出世界系点云（替代 livox 魔改版行为）
+    private: bool world_frame_;
+    private: ignition::math::Quaterniond sensor_world_rot_;
+    private: ignition::math::Vector3d sensor_world_pos_;
+    private: physics::EntityPtr parent_entity_;
+
     /// \brief the intensity beneath which points will be filtered
     private: double min_intensity_;
 

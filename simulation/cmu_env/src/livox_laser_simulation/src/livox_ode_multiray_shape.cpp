@@ -81,15 +81,14 @@ void LivoxOdeMultiRayShape::UpdateCallback(void *_data, dGeomID _o1, dGeomID _o2
     self = static_cast<LivoxOdeMultiRayShape*>(_data);
 
     // Check space
+    // 2026-08-25 修复：原版只在「对方是 superSpaceId 或 raySpaceId」时才递归子空间，
+    // gazebo11 在多模型世界里会把部分几何收进普通嵌套空间（非上述两类），
+    // 这些空间整棵被丢弃 → 雷达在 populated 世界里全盲（含自身回波）。
+    // 现改为无条件对空间对递归，直到落到具体 geom（空间树有限深，自然终止）。
     if (dGeomIsSpace(_o1) || dGeomIsSpace(_o2))
     {
-        if (dGeomGetSpace(_o1) == self->superSpaceId ||
-            dGeomGetSpace(_o2) == self->superSpaceId)
-            dSpaceCollide2(_o1, _o2, self, &UpdateCallback);
-
-        if (dGeomGetSpace(_o1) == self->raySpaceId ||
-            dGeomGetSpace(_o2) == self->raySpaceId)
-            dSpaceCollide2(_o1, _o2, self, &UpdateCallback);
+        dSpaceCollide2(_o1, _o2, self, &UpdateCallback);
+        return;
     }
     else
     {

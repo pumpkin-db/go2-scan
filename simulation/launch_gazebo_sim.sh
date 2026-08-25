@@ -3,6 +3,15 @@
 # 用法：bash launch_gazebo_sim.sh
 set -e
 
+# 0) 单实例守卫：已有 gzserver 在跑就拒绝启动（孤儿 gzserver 会连上新 master 发布
+#    陈旧 /clock 和 /mid360_points，把新栈污染成"世界加载了但雷达全瞎"的假象。
+#    2026-08-25 下午的连环误诊皆源于此。先跑 kill_all_sim.sh 再来。）
+if pgrep -x gzserver >/dev/null 2>&1; then
+  echo "[launch_gazebo_sim] FATAL: 检测到已存在的 gzserver (pid $(pgrep -x gzserver | tr '\n' ' '))，拒绝启动。"
+  echo "[launch_gazebo_sim] 请先: bash $GO2_ROOT/simulation/kill_all_sim.sh 并复核 pgrep -x gzserver 为空"
+  exit 42
+fi
+
 # 1) 清理 conda/anaconda 污染（否则 cmake/protobuf/rospy 全乱）
 export PATH=$(echo "$PATH" | tr ':' '\n' | grep -viE "conda|anaconda|miniconda" | tr '\n' ':')
 

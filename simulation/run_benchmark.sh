@@ -30,7 +30,8 @@ nohup bash $GO2/simulation/launch_gazebo_sim.sh $PLANNER scene:=$SCENE_NAME gui:
       > /tmp/bench_sim.log 2>&1 &
 SIM_PID=$!
 
-# 等 gazebo 服务起来，然后处理 spawn 竞态（已知问题：首 spawn 可能超时但请求已入队）
+# 等 gazebo 服务起来，然后由 spawn_go2.py 全托管 spawn（查重→删旧→服务化 spawn→点云健康门）。
+# 2026-08-25 复盘：旧 CLI 方式超时但请求入队，重试导致多狗叠生、雷达被埋、静默出废报告。
 sleep 40
 SCAN=$GO2/algorithms/local_planning/scan_planner
 source /opt/ros/noetic/setup.bash
@@ -38,12 +39,13 @@ source $SCAN/devel/setup.bash
 CMU=$GO2/simulation/cmu_env
 export ROS_PACKAGE_PATH=$CMU/src/velodyne_simulator:$CMU/src:$ROS_PACKAGE_PATH
 export GAZEBO_MODEL_PATH
-for i in 1 2 3; do
-  OUT=$(timeout 60 rosrun gazebo_ros spawn_model -param robot_description -urdf \
-        -model go2_description -x $SPAWN_X -y $SPAWN_Y -z $SPAWN_Z 2>&1 | grep -oE "(successfully spawned|entity already exists)")
-  if [ -n "$OUT" ]; then echo "[bench] spawn OK ($OUT, 第${i}次尝试)"; break; fi
-  echo "[bench] spawn 第${i}次失败，20s 后重试..."; sleep 20
-done
+/usr/bin/python3 $GO2/simulation/spawn_go2.py --x $SPAWN_X --y $SPAWN_Y --z $SPAWN_Z --yaw ${SPAWN_YAW:-0}
+SPAWN_RC=$?
+if [ $SPAWN_RC -ne 0 ]; then
+  echo "[bench] FATAL: spawn/健康门失败 (rc=$SPAWN_RC)，清理仿真后退出"
+  bash $GO2/simulation/kill_all_sim.sh >/dev/null 2>&1 || true
+  exit $SPAWN_RC
+fi
 
 echo "[bench] 挂载评估器（最长 ${MAX_MIN}min）..."
 cd $GO2

@@ -820,6 +820,55 @@
     </inertial>
   </link>
   <gazebo reference="mid360">
+    <sensor type="ray" name="laser_mid360">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <always_on>True</always_on>
+      <update_rate>10</update_rate>
+      <!-- 2026-08-25 换装：livox 自制 ODE 射线插件在多模型世界全盲（详见 PROGRESS.md），
+           改用标准 RaySensor + velodyne 插件（CMU vendor，已增补 worldFrame 世界系输出）。
+           视场角对齐 MID360：水平 360°，垂直 -7°~52°；200x50=10000 点/帧 @10Hz。 -->
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>200</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.1415926535897931</min_angle>
+            <max_angle>3.1415926535897931</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>50</samples>
+            <resolution>1</resolution>
+            <min_angle>-0.12217304763960207</min_angle>
+            <max_angle>0.90757121103705141</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.1</min>
+          <max>40</max>
+          <resolution>1</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.0</stddev>
+        </noise>
+      </ray>
+      <plugin name="gazebo_ros_velodyne_laser_controller" filename="libgazebo_ros_velodyne_laser.so">
+        <robotNamespace>/</robotNamespace>
+        <topicName>/mid360_points</topicName>
+        <frameName>world</frameName>
+        <worldFrame>true</worldFrame>
+        <organize_cloud>false</organize_cloud>
+        <min_range>0.1</min_range>
+        <max_range>40.0</max_range>
+        <gaussianNoise>0.0</gaussianNoise>
+      </plugin>
+    </sensor>
+  </gazebo>
+  <!-- 旧 livox 插件块（2026-08-25 停用保留备查）：自定义 ODE 射线空间在 populated
+       世界里射线全部漏检（点云坍缩为传感器原点单点），根因见 PROGRESS.md 2026-08-25。
+  <gazebo reference="mid360">
     <sensor type="ray" name="laser_livox">
       <pose>0 0 0 0 0 0</pose>
       <visualize>false</visualize>
@@ -862,4 +911,5 @@
       </plugin>
     </sensor>
   </gazebo>
+  旧 livox 插件块注释结束 -->
 </robot>

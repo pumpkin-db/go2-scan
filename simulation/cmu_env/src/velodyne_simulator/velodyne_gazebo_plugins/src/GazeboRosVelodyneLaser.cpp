@@ -113,6 +113,10 @@ void GazeboRosVelodyneLaser::Load(sensors::SensorPtr _parent, sdf::ElementPtr _s
     gzthrow("GazeboRosVelodyne" << STR_Gpu << "Laser controller requires a " << STR_Gpu << "Ray Sensor as its parent");
   }
 
+  // 2026-08-25 go2-scan 增补：取传感器所在 link 实体（世界系输出用）
+  world_frame_ = false;
+  parent_entity_ = physics::get_world(_parent->WorldName())->EntityByName(_parent->ParentName());
+
   robot_namespace_ = "/";
   if (_sdf->HasElement("robotNamespace")) {
     robot_namespace_ = _sdf->GetElement("robotNamespace")->Get<std::string>();
@@ -130,6 +134,14 @@ void GazeboRosVelodyneLaser::Load(sensors::SensorPtr _parent, sdf::ElementPtr _s
     organize_cloud_ = false;
   } else {
     organize_cloud_ = _sdf->GetElement("organize_cloud")->Get<bool>();
+  }
+
+  // 2026-08-25 go2-scan 增补：<worldFrame>true</worldFrame> 时输出世界系点云
+  if (!_sdf->HasElement("worldFrame")) {
+    world_frame_ = false;
+  } else {
+    world_frame_ = _sdf->GetElement("worldFrame")->Get<bool>();
+    ROS_INFO("Velodyne laser plugin worldFrame=%d", world_frame_);
   }
 
   if (!_sdf->HasElement("min_range")) {
@@ -275,6 +287,14 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
   const double MAX_RANGE = std::min(max_range_, maxRange);
   const double MIN_INTENSITY = min_intensity_;
 
+  // 2026-08-25 go2-scan 增补：每帧取传感器世界位姿，供世界系输出使用
+  // （同 livox 魔改版：父实体世界位姿 × 传感器相对位姿）
+  if (world_frame_ && parent_entity_ != nullptr) {
+    ignition::math::Pose3d wp = parent_entity_->WorldPose() * parent_ray_sensor_->Pose();
+    sensor_world_rot_ = wp.Rot();
+    sensor_world_pos_ = wp.Pos();
+  }
+
   // Populate message fields
   const uint32_t POINT_STEP = 22;
   sensor_msgs::PointCloud2 msg;
@@ -347,12 +367,23 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
 
       // pAngle is rotated by yAngle:
       if ((MIN_RANGE < r) && (r < MAX_RANGE)) {
+        // 2026-08-25 增补：world_frame_=true 时把点从传感器系转到世界系
+        // （对齐原 livox 魔改版行为，下游 cloud_is_world 管线免变换）
         *((float*)(ptr + 0)) = r * cos(pAngle) * cos(yAngle); // x
         *((float*)(ptr + 4)) = r * cos(pAngle) * sin(yAngle); // y
         *((float*)(ptr + 8)) = r * sin(pAngle); // z
         *((float*)(ptr + 12)) = intensity; // intensity
         *((uint16_t*)(ptr + 16)) = j; // ring
         *((float*)(ptr + 18)) = 0.0; // time
+        if (world_frame_) {
+          float *f = reinterpret_cast<float *>(ptr);
+          ignition::math::Vector3d p_sensor(f[0], f[1], f[2]);
+          ignition::math::Vector3d p_world =
+              sensor_world_rot_.RotateVector(p_sensor) + sensor_world_pos_;
+          f[0] = static_cast<float>(p_world.X());
+          f[1] = static_cast<float>(p_world.Y());
+          f[2] = static_cast<float>(p_world.Z());
+        }
         ptr += POINT_STEP;
       } else if (organize_cloud_) {
         *((float*)(ptr + 0)) = nanf(""); // x

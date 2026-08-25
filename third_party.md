@@ -40,6 +40,9 @@
 以下仓库在选型阶段评估过、当前**未采用**，保留在 `~/claude/raicom/new_algorithm/`（未迁入 go2-scan），后续若启用再按上面规范迁入：
 
 - FAEL、FUEL、UFEP-Released、TravExplorer、gbplanner_ros、ego-planner、stc_ws、LKH-3.0.14、nlopt（gbplanner 依赖）、HPHS（场景制作工具）
+- **ARiADNE2-ROS-Planner**（marmotlab，2026-08-25 克隆到 `try_algorithm/code/`）：HEADER 论文
+  （arXiv 2510.15679）的 ROS1 Noetic 官方包，社区检测全局图 + 注意力决策，是 ARiADNE v1 同组续作。
+  候选升级：编译冒烟后用我们评估器跑 indoor_1 对照再定。笔记见 `try_algorithm/notes/HEADER与HDPlanner精读.md`。
 
 ## 编译
 
