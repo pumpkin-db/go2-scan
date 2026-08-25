@@ -8,7 +8,7 @@ import numpy as np
 import rospy
 from nav_msgs.msg import OccupancyGrid
 
-Z_MIN, Z_MAX = 0.35, 1.25   # 对齐 octomap 投影带 [0.4,1.2]（体素中心±半格）
+Z_MIN, Z_MAX = 0.20, 0.80   # 对齐 octomap 投影带 [0.2,0.8]@res0.2：被投影空间 = 中心0.3层[0.2,0.4] ∪ 0.5层[0.4,0.6] ∪ 0.7层[0.6,0.8]
 
 def load_pcd_xyz(path):
     with open(path, 'rb') as f:

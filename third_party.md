@@ -77,7 +77,7 @@ ARiADNE 是纯 2D 决策层：吃 2D 占据栅格 + 机器人 x/y，吐航点。
 - octomap_server 的射线起点 = TF(frame_id → 点云header.frame) 平移；有 tf::MessageFilter 门控（点云 stamp 时刻 TF 不可解则扣帧 → 地图空/滞后）。
 - 官方链路单一全局系：CMU 把仿真器世界坐标直接命名 map；**map≡world 数值恒等是构造出来的**。
 - sensorScanGeneration（CMU 包）：ApproximateTime(100) 同步 registered_scan+state_estimation → /sensor_scan(frame=sensor_at_scan) + 点云 stamp 时刻广播 TF map→sensor_at_scan。
-- 分辨率三处一致：octomap resolution = rl_planner map_resolution = 0.4。
+- 分辨率两处一致：octomap resolution = rl_planner map_resolution（原 0.4，2026-08-24 用户决策改 0.2）——rl_planner 不读消息头只信自己的 param，两处不同步=全图错位。
 
 ### 第一次 A2 接入失败解剖（2026-08-24，完整快照在 archive/ariadne-a2-attempt1 分支）
 
@@ -98,7 +98,7 @@ ARiADNE 是纯 2D 决策层：吃 2D 占据栅格 + 机器人 x/y，吐航点。
 
 **修复配方（run9 验证：幻影 0/428 格，自由:占据=1433:428≈3.4:1 达官方级，狗 54 航点未假完成）**
 - 世界文件 indoor_1.world：无限 ground_plane → 有限地板 box（58×38m 覆盖建筑足迹）
-- octomap：`occupancy_min_z=0.4`（关键一刀：地面端点的体素中心 0.2 投不进带，≥0.4m 真障碍经中心 0.6 体素照常投影）；max_z=1.2、收发耦合 7m 回官方跑通现场值
+- octomap：`occupancy_min_z=0.4`（关键一刀：地面端点的体素中心 0.2 投不进带，≥0.4m 真障碍经中心 0.6 体素照常投影）；max_z=1.2、收发耦合 7m 回本机跑通现场值(envB，非官方配方)
 - 辅助：`filter_ground=true` + `base_frame_id=world`（RANSAC 在地面点占比仅 4.7% 时不可靠，只作辅助层）
 - 教训：诊断时「z_std≈0 帧」「截断端点」等假设均被实验否决——每一步都必须用探针数据背书
 
@@ -121,7 +121,7 @@ ariadne_goal_bridge（唯一自研胶水，去重>1m） ─> /initial_path(Path[
 SCAN navi_mode=3（替代官方 waypoint follower；同样裸读坐标）
 ```
 
-参数基准 = 官方 indoor launch 全套（factor 0.5 / min_utility 3 / replanning 2.5 / node_resolution 2.0），仅两处用户决策覆盖：octomap max_range 20→5（收紧已探索判定）、z 切片 [0,1.2]→[0.2,0.8]（四足有效障碍带）。链路配置在包内 `launch/go2_ariadne.launch`。
+参数基准 = 官方 indoor launch 全套（factor 0.5 / min_utility 3 / replanning 2.5 / node_resolution 2.0）。2026-08-24~25 用户决策三项偏离官方（A/B 判据：tools/probe_occ_vs_gt.py 幻影占比<5% + 航点数/用时）。**术语勘误（2026-08-25，用户强调）：官方配方 = 上游原版默认 sensor_range 20m，本机从未完整跑通；envB.log 的 7m 是「本机自设参数跑通官方 demo」的现场记录，不是官方配方**。①收发量程耦合 **6m（2026-08-25 终版：用户自行多轮实测后拍板，明确不再改动）**（沿革：官方配方 20 → 本机跑通记录 envB 7 → 用户 5 → 3 → 4 → 10 → 6.5 → **6 终版**；有效效用环 3.0m；黄点消失=SCAN optimal_traj 无更新=断供信号）；②**map_resolution 0.2**——octomap resolution 与 rl_planner map_resolution 必须同步改（rl_planner 只信自己的 param 不读消息头，不一致=全图几何错位），octomap 负载相对原版 ≈8×、决策图规模 ≈4×；③z 切片 **[0.2,0.8]**——免疫规则=min_z ≥ 一个整格（res=0.2 体素中心层 0.1/0.3/0.5/0.7…，地面端点落 0.1 层永不投影），用户原始四足障碍带偏好在 0.2 格下完整达成。链路配置在包内 `launch/go2_ariadne.launch`。
 
 ### 保留思路库（第一次接入的遗产，按需启用，不再预埋）
 

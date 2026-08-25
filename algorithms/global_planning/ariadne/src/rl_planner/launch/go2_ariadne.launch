@@ -16,12 +16,23 @@
   <!--      z 切片 [0.2,0.8]。不再预埋对抗性补丁。                      -->
   <!-- ============================================================ -->
 
-  <!-- 2026-08-24 官方对齐实验（run9）：z 带与收发量程整体回到官方 envB 跑通现场
-       （z[0,1.2]、收发耦合 7m）。此前用户偏好(5m/[0.2,0.8])与解耦(12m)在幻影墙问题
-       未消前无法评估，先复现官方配方再逐项回收偏好。 -->
-  <arg name="sensor_range" default="7.0"/>
-  <arg name="planner_sensor_range" default="7.0"/>
-  <arg name="map_resolution" default="0.4"/>
+  <!-- 收发量程沿革（2026-08-25 术语勘误：官方配方 = 上游原版默认 20m，本机无
+       完整跑通记录；envB.log 的 7m 是「本机自设参数跑通官方 demo」的现场值，
+       不是官方配方）：官方配方 20 → 本机跑通记录 envB 7（run9 曾整体回退以隔离
+       幻影墙变量）→ 用户 5 → 3 → 4 → 10 → 6.5 → 6。
+       **终版 6m（2026-08-25 用户多轮实测拍板，不再改动）**：有效效用环 = 6×0.5 = 3.0m。
+       另注：「黄点消失」=SCAN optimal_traj 无更新=断供信号，可肉眼判链路死活。 -->
+  <arg name="sensor_range" default="6"/>
+  <arg name="planner_sensor_range" default="6"/>
+  <!-- 2026-08-24 用户决策 res 两连跳：0.4→0.3→0.2（动机：0.4 下全场覆盖不全、
+       门洞表示粗）。幻影墙免疫的格点几何随之换算：体素中心层变 0.1/0.3/0.5/0.7…，
+       地面端点落中心 0.1 层，0.1+半格0.1=0.2 > min_z=0.2 恒假 → 地面永不投影
+       （规则不变：min_z ≥ 一个整格）——用户原始 z 带 [0.2,0.8] 至此完整回收。
+       ⚠ 负载：octomap 相对原版 0.4 为 (0.4/0.2)³≈8×，rl_planner 图规模 ≈4×，
+       Orin NX 实机部署前必须实测 replan 周期；仿真中先观察卡顿。
+       ⚠ octomap resolution 与 rl_planner map_resolution 必须同步改：
+       rl_planner 只信自己的 param 不读消息头，不一致=全图几何错位。 -->
+  <arg name="map_resolution" default="0.2"/>
   <arg name="node_resolution" default="2.0"/>
 
   <!-- map→world 恒等桥（100ms 周期）。octomap/RViz 的 frame 字符串 "map"
@@ -51,16 +62,18 @@
     <param name="base_frame_id" value="world"/>
     <param name="filter_ground" value="true"/>
     <param name="resolution" value="$(arg map_resolution)"/>
-    <!-- z∈[0.4,1.2]（run9）：min_z=0.4 是幻影墙的关键修法——地面端点落在体素中心
-         z=0.2（分辨率0.4），投影条件「中心+半格 > min_z」在 min_z≥0.4 时恒假，
-         地面/庭院回波无论 RANSAC 成败都进不了黑格；≥0.4m 的真实障碍经中心0.6体素
-         照常投影。filter_ground 保留作辅助（其 RANSAC 在地面点占比<5% 时不可靠）。 -->
-    <param name="occupancy_min_z" type="double" value="0.4"/>
-    <param name="occupancy_max_z" type="double" value="1.2"/>
-    <!-- max_range=5m（用户定，收紧「已探索」判定）。官方 indoor 默认 20，
-         本机官方 env 用 5 也完整跑通（envB.log 正常 Completed）。
-         注意与 rl_planner sensor_range 保持同值（官方即同 arg 耦合）；
-         若效用视野病复发，解耦调大后者是已记录的备选杠杆。 -->
+    <!-- z∈[0.2,0.8]（2026-08-24 随 res=0.2 联动，用户原始偏好在 0.2 格下达成）：
+         免疫规则不变——min_z ≥ 一个整格。res=0.2 体素中心层 0.1/0.3/0.5/0.7…，
+         地面端点(z≈0)落中心 0.1 层，0.1+0.1=0.2 > 0.2 恒假 → 地面/庭院回波
+         无论 RANSAC 成败都进不了黑格；真实障碍经中心 0.3/0.5/0.7 层照常投影
+         （精确覆盖物高 0.2~0.8m 四足有效障碍带）。filter_ground 保留作辅助
+         （RANSAC 在地面点占比<5% 时不可靠）。 -->
+    <param name="occupancy_min_z" type="double" value="0.2"/>
+    <param name="occupancy_max_z" type="double" value="0.8"/>
+    <!-- max_range=6m（2026-08-25 用户终版决策，多轮实测后拍板不再改）。沿革：
+         官方配方（上游原版默认）20 → 本机跑通记录 envB 7（非官方默认）→
+         用户 5 → 3 → 4 → 10 → 6.5 → 6。
+         注意与 rl_planner sensor_range 保持同值（官方即同 arg 耦合）。 -->
     <param name="sensor_model/max_range" value="$(arg sensor_range)"/>
     <param name="sensor_model/hit" type="double" value="1"/>
     <param name="sensor_model/miss" type="double" value="0.45"/>
