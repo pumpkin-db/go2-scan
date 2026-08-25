@@ -1,0 +1,40 @@
+{
+  "algo": "ariadne",
+  "scene": "indoor_1",
+  "vox_res": 0.4,
+  "sensor_range": 6.0,
+  "taus": [
+    0.05,
+    0.1,
+    0.2
+  ],
+  "traj_samples": 351,
+  "exploration": {
+    "duration_s": 3.490000000000009,
+    "path_length_m": 0.0,
+    "er_final": 0.0,
+    "t90_rel_s": null,
+    "t95_rel_s": null,
+    "plateau_time_s": 0.0,
+    "eta_cov_per_m": null,
+    "curve_len": 351
+  },
+  "map_quality": {
+    "n_scan": 57398,
+    "n_gt": 209876,
+    "accuracy_mean_m": 0.1938139991248893,
+    "accuracy_median_m": 0.0462819227220963,
+    "rmse_inlier_0p10": 0.04879450607246185,
+    "chamfer_sym_m": 2.941245632177599,
+    "precision@05p00m": 0.6064148576605457,
+    "recall@05p00m": 0.12485944081267034,
+    "fscore@05p00m": 0.2070813104906737,
+    "precision@10p00m": 0.8264399456427053,
+    "recall@10p00m": 0.224775581772094,
+    "fscore@10p00m": 0.3534261333418002,
+    "precision@20p00m": 0.8459528206557719,
+    "recall@20p00m": 0.43758219138920124,
+    "fscore@20p00m": 0.5768037265842161,
+    "completeness_mean_m": 5.688677265230309
+  }
+}

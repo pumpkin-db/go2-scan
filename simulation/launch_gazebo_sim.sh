@@ -6,6 +6,7 @@ set -e
 # 1) 清理 conda/anaconda 污染（否则 cmake/protobuf/rospy 全乱）
 export PATH=$(echo "$PATH" | tr ':' '\n' | grep -viE "conda|anaconda|miniconda" | tr '\n' ':')
 
+GO2_ROOT=$HOME/claude/raicom/go2-scan
 CMU=$HOME/claude/raicom/go2-scan/simulation/cmu_env
 SCAN=$HOME/claude/raicom/go2-scan/algorithms/local_planning/scan_planner
 ELEV=$HOME/claude/raicom/go2-scan/algorithms/mapping/elevation_mapping
@@ -40,5 +41,23 @@ export ROS_PACKAGE_PATH=$ARIADNE/src:$ROS_PACKAGE_PATH
 # 6) go2_bridge（自研胶水，纯 Python，rospack 直指 integration/）
 export ROS_PACKAGE_PATH=$BRIDGE:$ROS_PACKAGE_PATH
 
+# 6b) 场景支持：scene:=<name> 时 source scenes/<name>/env.sh（世界/GT/出生点/model路径）
+SCENE=""
+REST_ARGS=()
+for a in "$@"; do
+  case "$a" in
+    scene:=*) SCENE="${a#scene:=}" ;;
+    *) REST_ARGS+=("$a") ;;
+  esac
+done
+EXTRA_ARGS=()
+if [ -n "$SCENE" ]; then
+  # shellcheck disable=SC1091
+  source $GO2_ROOT/scenes/$SCENE/env.sh 2>/dev/null || { echo "未知场景: $SCENE"; exit 1; }
+  EXTRA_ARGS+=(world_file:="$SCENE_WORLD" gt_pcd:="$SCENE_GT"
+               init_x:="$SPAWN_X" init_y:="$SPAWN_Y" init_z:="$SPAWN_Z"
+               init_yaw:="$SPAWN_YAW")
+fi
+
 # 7) 启动
-roslaunch scan_planner gazebo_sim.launch "$@"
+roslaunch scan_planner gazebo_sim.launch "${REST_ARGS[@]}" "${EXTRA_ARGS[@]}"

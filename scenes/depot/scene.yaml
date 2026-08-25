@@ -1,0 +1,35 @@
+# Depot 场景参数（DARPA SubT 仓库，Ignition 模型转换版）
+# 由 go2-scan/scenes/gtools/make_scene_gt.py 的几何分析得出（2026-08-25）
+name: depot
+world: scenes/depot/depot.world
+gt_pcd: scenes/depot/gt/depot.pcd        # 150万点，WALLS/FLOOR/STAIRS/PILLERS/BOXSET/ROOF 采样
+
+# 场景范围（墙体内）
+bounds:
+  x: [-15.3, 15.3]
+  y: [-7.9, 7.7]
+  z_max: 9.6
+
+# 楼层高度（世界系地面 z；kinematic_sim 地形跟随用）
+floors:
+  - {name: ground, z: 0.09}
+  - {name: mezzanine, z: 2.86}           # 主楼梯出口平台高（楼梯段分析）
+
+# 已注册楼梯对（stair_detector 的真值兜底/验收基准）
+stairs:
+  - name: main_east
+    entry: {x: 12.87, y: 0.40, z: 0.44}
+    exit:  {x: 12.87, y: 3.20, z: 2.76}
+    yaw_deg: 90          # 沿 +y 爬升
+    width: 1.2
+    step_rise: 0.161     # 踏步高（Go2 可爬上限附近；仿真地形跟随无碍）
+    step_depth: 0.28     # 由层数与跨度估算
+
+# 出生点（一层平地，远离楼梯与货箱）
+spawn: {x: -12.0, y: 0.0, z: 0.35, yaw: 0}
+
+notes: >
+  原模型除 100×100 地面外无 collision，已由 gtools/sdf_add_collisions.py 给
+  WALLS/FLOOR/STAIRS/PILLERS/BOXSET/ROOF 补 collision 并转 static。
+  STAIRS 子网格含全场多段梯/平台（总升高5.62m），坡度聚类后确认主爬升段为东侧
+  main_east；其余为货架坡道类结构（坡度/尺寸被过滤），后续按需补充。

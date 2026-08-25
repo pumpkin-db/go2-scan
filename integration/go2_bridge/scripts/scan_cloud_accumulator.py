@@ -15,7 +15,7 @@ import numpy as np
 import sensor_msgs.point_cloud2 as pc2
 from sensor_msgs.msg import PointCloud2
 from nav_msgs.msg import Odometry
-from std_srvs.srv import Empty, EmptyResponse, Trigger
+from std_srvs.srv import Empty, EmptyResponse, Trigger, TriggerResponse
 
 
 class ScanAccumulator:
@@ -92,9 +92,9 @@ class ScanAccumulator:
                 f.write('POINTS %d\nDATA ascii\n' % len(pts))
                 for row in pts:
                     f.write('%.4f %.4f %.4f\n' % (row[0], row[1], row[2]))
-            return Trigger(success=True, message='saved %d points to %s' % (len(pts), pcd_path))
+            return TriggerResponse(success=True, message='saved %d points to %s' % (len(pts), pcd_path))
         except Exception as e:
-            return Trigger(success=False, message=str(e))
+            return TriggerResponse(success=False, message=str(e))
 
     def clear_cb(self, _req):
         self.cells.clear()

@@ -18,14 +18,18 @@
   <arg name="init_y" default="0.5"/>
   <arg name="init_z" default="0.25"/>
   <arg name="init_yaw" default="0.0"/>
+  <!-- 无头跑分开关（评估器/批量测试用）：gui:=false rviz:=false 省 CPU。
+       默认 true 保持人工观察工作流不变。 -->
+  <arg name="gui" default="true"/>
+  <arg name="rviz" default="true"/>
 
   <!-- 1. Gazebo 场景 -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name" value="$(arg world_file)"/>
     <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
-    <arg name="gui" value="true"/>
-    <arg name="headless" value="false"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="headless" value="$(eval not gui)"/>
   </include>
 
   <!-- spawn 狗模型（URDF 已含 mid360 LiDAR 插件） -->
@@ -73,9 +77,10 @@
   <!-- 狗总轨迹可视化：订阅 /quad_0/body_pose，累积发布 /odom_visualization/path（his_path） -->
   <node pkg="odom_visualization" type="odom_visualization" name="odom_visualization" output="screen"/>
 
-  <!-- 6. 场景完整点云（ground truth，对照用）：map_pub 发布 indoor_1.pcd 到 /map -->
+  <!-- 6. 场景完整点云（ground truth，对照用）：GT 路径随场景切换 -->
+  <arg name="gt_pcd" default="$(env HOME)/claude/raicom/go2-scan/maps/indoor_1.pcd"/>
   <node pkg="map_generator" type="map_pub" name="map_pub"
-        args="$(env HOME)/claude/raicom/go2-scan/maps/indoor_1.pcd">
+        args="$(arg gt_pcd)">
     <param name="frame_id" value="world"/>
     <param name="publish_rate" value="0.2"/>
     <param name="cloud_topic" value="/map"/>
@@ -90,7 +95,7 @@
   </node>
 
   <!-- 8. RViz（GPU 硬件渲染：WSL2 的 OpenGL 走 D3D12 直通 NVIDIA，无需软件渲染） -->
-  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default.rviz"/>
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default.rviz"/>
 
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策） -->
   <include file="$(env HOME)/claude/raicom/go2-scan/simulation/elevation/elevation.launch"/>
