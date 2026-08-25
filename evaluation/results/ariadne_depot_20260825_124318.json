@@ -1,0 +1,21 @@
+{
+  "algo": "ariadne",
+  "scene": "depot",
+  "vox_res": 0.4,
+  "sensor_range": 6.0,
+  "taus": [
+    0.05,
+    0.1,
+    0.2
+  ],
+  "traj_samples": 210015,
+  "exploration": {
+    "duration_s": 2101.348,
+    "path_length_m": 76.04298332619554,
+    "er_final": 0.43503045066991475,
+    "t90_rel_s": null,
+    "t95_rel_s": null,
+    "plateau_time_s": 136.64000000000001,
+    "eta_cov_per_m": 0.005720849336010388,
+    "curve_len": 601,
+    "degraded": 

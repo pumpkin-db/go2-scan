@@ -196,7 +196,7 @@ def evaluate(traj, scan_xyz, gt_xyz, algo, scene):
 
     # 退化跑自动判废（2026-08-25 三跑对照结论：退化=ER 极早平台期+路径异常短）。
     # 判据：覆盖在 <5% 时长内即平台化，或 <1% 时长内路径已停但仿真继续。
-    degraded = (last_gain_t < 0.05 * duration) if duration > 0 else False
+    degraded = bool(last_gain_t < 0.05 * duration) if duration > 0 else False
     res['exploration'] = {
         'duration_s': duration,
         'path_length_m': path_len,
