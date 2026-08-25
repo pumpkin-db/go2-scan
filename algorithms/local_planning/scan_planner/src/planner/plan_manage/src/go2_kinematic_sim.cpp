@@ -49,6 +49,7 @@ bool terrain_follow = false;
 std::string elevation_topic = "/elevation_mapping/elevation_map";
 double body_height = 0.25;   // 站高：狗体心离地高度
 double max_dz_rate = 0.8;    // z 变化限速 m/s（楼梯台阶的平滑下限）
+double follow_max_jump = 1.0; // 单步跟随的最大 z 跳变（滤掉「另一层楼」的地表）
 
 // 最新高程图快照（grid_map_msgs 手工采样，避免引入 grid_map_ros 运行时依赖）
 grid_map_msgs::GridMap::ConstPtr last_elevation;
@@ -155,7 +156,10 @@ void simCallback(const ros::TimerEvent &)
     if (!std::isnan(h))
     {
       const double z_target = h + body_height;
-      if (dt > 1e-4)
+      // 跳变限幅：目标与当前 z 差超过 follow_max_jump 视为「另一层楼的地表」
+      //（2.5D 高程图在夹层下方会报上层高度），保持当前 z 不跟。
+      // 楼梯台阶 0.16m 级差远小于限幅，不受影响。
+      if (std::abs(z_target - z) <= follow_max_jump && dt > 1e-4)
       {
         const double dz = z_target - z;
         const double dz_max = max_dz_rate * dt;
@@ -241,6 +245,7 @@ int main(int argc, char **argv)
   nh.param("elevation_topic", elevation_topic, std::string("/elevation_mapping/elevation_map"));
   nh.param("body_height", body_height, 0.25);
   nh.param("max_dz_rate", max_dz_rate, 0.8);
+  nh.param("follow_max_jump", follow_max_jump, 1.0);
   if (terrain_follow)
   {
     elevation_sub = node.subscribe(elevation_topic, 1, elevationCallback);

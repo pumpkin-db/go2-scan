@@ -57,7 +57,13 @@ if [ -n "$SCENE" ]; then
   EXTRA_ARGS+=(world_file:="$SCENE_WORLD" gt_pcd:="$SCENE_GT"
                init_x:="$SPAWN_X" init_y:="$SPAWN_Y" init_z:="$SPAWN_Z"
                init_yaw:="$SPAWN_YAW" ${SCENE_EXTRA_ARGS:-})
+  # 场景自带高程图窗口配置（Depot 等非 indoor_1 中心场景必须）
+  if [ -f "$GO2_ROOT/scenes/$SCENE/elevation/elevation_map.yaml" ]; then
+    ELEV_CFG_DIR=$GO2_ROOT/scenes/$SCENE/elevation
+  fi
 fi
 
-# 7) 启动
-roslaunch scan_planner gazebo_sim.launch "${REST_ARGS[@]}" "${EXTRA_ARGS[@]}"
+# 7) 启动（场景自带高程配置时覆盖 cfg_dir）
+ELEV_ARGS=()
+[ -n "${ELEV_CFG_DIR:-}" ] && ELEV_ARGS+=(cfg_dir:="$ELEV_CFG_DIR")
+roslaunch scan_planner gazebo_sim.launch "${REST_ARGS[@]}" "${EXTRA_ARGS[@]}" "${ELEV_ARGS[@]}"

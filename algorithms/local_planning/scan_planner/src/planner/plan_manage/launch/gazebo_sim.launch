@@ -100,8 +100,12 @@
   <!-- 8. RViz（GPU 硬件渲染：WSL2 的 OpenGL 走 D3D12 直通 NVIDIA，无需软件渲染） -->
   <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default.rviz"/>
 
-  <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策） -->
-  <include file="$(env HOME)/claude/raicom/go2-scan/simulation/elevation/elevation.launch"/>
+  <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策）
+       cfg_dir 可被场景覆盖（Depot 等场景窗口中心与 indoor_1 不同） -->
+  <arg name="cfg_dir" default="$(env HOME)/claude/raicom/go2-scan/simulation/elevation"/>
+  <include file="$(env HOME)/claude/raicom/go2-scan/simulation/elevation/elevation.launch">
+    <arg name="cfg_dir" value="$(arg cfg_dir)"/>
+  </include>
 
   <!-- 10. 全局探索决策层（决定"往哪探索"），global_planner 选择：
        tare    -> TARE（默认）：way_point -> /move_base_simple/goal（navi_mode=1 追单点）
