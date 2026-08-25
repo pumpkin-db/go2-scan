@@ -194,6 +194,9 @@ def evaluate(traj, scan_xyz, gt_xyz, algo, scene):
         prev_er = er
     er_final = prev_er
 
+    # 退化跑自动判废（2026-08-25 三跑对照结论：退化=ER 极早平台期+路径异常短）。
+    # 判据：覆盖在 <5% 时长内即平台化，或 <1% 时长内路径已停但仿真继续。
+    degraded = (last_gain_t < 0.05 * duration) if duration > 0 else False
     res['exploration'] = {
         'duration_s': duration,
         'path_length_m': path_len,
@@ -203,6 +206,7 @@ def evaluate(traj, scan_xyz, gt_xyz, algo, scene):
         'plateau_time_s': last_gain_t,
         'eta_cov_per_m': er_final / path_len if path_len > 1 else None,
         'curve_len': len(curve_t),
+        'degraded': degraded,
     }
 
     # ---- B. 地图质量 ----
@@ -246,6 +250,12 @@ def write_report(res, curve, out_dir, tag):
         return
     lines = [
         '# 探索评估：%s @ %s' % (res['algo'], res['scene']),
+        '',
+        '**判废：%s**（degraded=%s，平台期 %s / duration %s）' % (
+            '❌ 退化跑——数据不用于 A/B 对比' if e.get('degraded') else '✅ 正常',
+            e.get('degraded'),
+            ('%.0fs' % e['plateau_time_s']) if e.get('plateau_time_s') else '-',
+            ('%.0fs' % e['duration_s']) if e.get('duration_s') else '-'),
         '',
         '## A. 探索效率（Explore-Bench 惯例）',
         '- 最终探索率 ER_final：**%.1f%%**' % (e['er_final'] * 100),
