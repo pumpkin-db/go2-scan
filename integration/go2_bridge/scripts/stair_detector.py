@@ -140,6 +140,8 @@ class StairDetector:
         self.last_elev = msg
 
     def tick(self, _):
+        # 注册表兜底无条件发布（transit 联调不依赖高程图存活）；几何检测部分依赖高程图
+        found = []
         if self.last_elevation_ready():
             parsed = gridmap_layer_numpy(self.last_elev, 'elevation')
             if parsed is not None:
@@ -152,11 +154,15 @@ class StairDetector:
                 for f in found:
                     f['name'] = 'detected_%.1f_%.1f' % (f['entry'][0], f['entry'][1])
                     f['source'] = 'detector'
-                all_pairs = self.registry + found
-                self.pub.publish(String(data=json.dumps(all_pairs)))
-                self.publish_markers(all_pairs)
-                if found:
-                    rospy.loginfo_throttle(30, '[stair_detector] 检出 %d 段楼梯', len(found))
+        all_pairs = self.registry + found
+        if all_pairs:
+            self.pub.publish(String(data=json.dumps(all_pairs)))
+            self.publish_markers(all_pairs)
+            if found:
+                rospy.loginfo_throttle(30, '[stair_detector] 检出 %d 段楼梯', len(found))
+            elif self.registry:
+                rospy.loginfo_throttle(60, '[stair_detector] 高程图未就绪，仅发布注册表 %d 对',
+                                       len(self.registry))
 
     def last_elevation_ready(self):
         return self.last_elev is not None

@@ -79,6 +79,11 @@ class Runner:
         # termination status
         self.done = False
 
+        # 停滞式完成判定状态（2026-08-25）：地图签名与最后变化时刻
+        self._last_map_signature = None
+        self._last_map_change_time = time.time()
+        self.stalled_complete_seconds = rospy.get_param('~stalled_complete_seconds', 20.0)
+
         # save mode
         self.save_mode = False
 
@@ -110,7 +115,7 @@ class Runner:
         delta = msg.info.resolution
         map_origin_x = msg.info.origin.position.x
         map_origin_y = msg.info.origin.position.y
-        
+
         map_width = msg.info.width
         map_height = msg.info.height
         ros_map = np.array(np.array(msg.data).reshape(map_height, map_width).astype(np.int8))
@@ -123,6 +128,15 @@ class Runner:
         robot_belief_map = processed_map
 
         self.map_info = MapInfo(robot_belief_map, map_origin_x, map_origin_y, delta)
+
+        # 停滞式完成判定（第一杠杆，2026-08-25）：记录地图最后一次「增长」的时刻。
+        # 已知区域格数变化才算增长；纯 utility 判完成会在门洞前沿不可见时假停。
+        known_cells = int((ros_map != parameter.UNKNOWN).sum())
+        sig = (map_width, map_height, known_cells)
+        if sig != self._last_map_signature:
+            self._last_map_signature = sig
+            self._last_map_change_time = time.time()
+
         t2 = time.time()
         # print("process map using {}".format(t2 - t1))
 
@@ -237,6 +251,16 @@ class Runner:
 
         # check the termination status
         if sum(self.robot.key_utility) == 0:
+            # 停滞式完成判定（2026-08-25）：效用全零还不够，必须地图也静止满
+            # STALLED_COMPLETE_SECONDS 秒才算完成。否则视为暂时停滞（门洞前沿不可见等），
+            # 等地图更新后前沿自然重现。
+            stalled_seconds = time.time() - self._last_map_change_time
+            if stalled_seconds < self.stalled_complete_seconds:
+                rospy.loginfo_throttle(
+                    10, f"utility all-zero but map growing ({stalled_seconds:.1f}s quiet), "
+                    "not completing yet")
+                return
+
             g = "\033[92m"
             n= "\033[0m"
             rospy.loginfo(f"{g}Exploration Completed{n}")
