@@ -23,6 +23,25 @@
   <gazebo reference="base">
     <kinematic>true</kinematic>
   </gazebo>
+  <!-- 腿连杆全部 kinematic（2026-08-25 狗腿乱飞根治）：本仿真的狗是「运动学传送」模型
+       ——base 由 set_model_state 传送、12 个腿关节由 gazebo_bridge 的
+       set_model_configuration 按 /joint_states 步态角度传送。此前腿连杆是动力学体且
+       revolute 关节零阻尼、无任何控制器插件：两次传送之间物理引擎在重力+足底接触下
+       自由甩腿（每次传送注入能量、速度残留），走动时接触摩擦加剧 → 腿乱飞。
+       设 kinematic 后物理引擎完全跳过这些连杆的动力学积分，腿变成纯外观动画，
+       只跟随步态传送；传感器(livox)挂 base 不受影响。 -->
+  <gazebo reference="FL_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FL_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FL_calf"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FR_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FR_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FR_calf"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RL_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RL_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RL_calf"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RR_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RR_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RR_calf"><kinematic>true</kinematic></gazebo>
   <link name="Head_upper">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />

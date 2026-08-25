@@ -74,12 +74,16 @@ class Go2GaitPublisher {
   }
 
   void timerCallback(const ros::TimerEvent& event) {
+    // 步态相位必须用 ROS 时间(仿真时间, use_sim_time=true)，不能用 event.current_real
+    //（墙钟）：gazebo_bridge 按「仿真时间」30Hz 节流应用 set_model_configuration，
+    // 若相位走墙钟，RTF<1 时两次应用之间相位狂飙，每次应用都是大跳变 → Gazebo 腿乱踢。
+    // 用仿真时间后相位与应用节流同源，RTF 掉时步态整体慢放（物理上合理的慢动作）。
+    const ros::Time stamp = ros::Time::now();
     if (!has_odom_) {
-      publishStance(event.current_real);
+      publishStance(stamp);
       return;
     }
 
-    const ros::Time stamp = event.current_real;
 
     const double speed_ratio =
         always_trot_ ? 0.45 : clamp((horizontal_speed_ - min_walk_speed_) /
