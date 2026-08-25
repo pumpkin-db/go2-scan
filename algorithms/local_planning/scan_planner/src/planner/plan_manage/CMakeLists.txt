@@ -23,6 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   cv_bridge
   visualization_msgs
+  grid_map_msgs
 )
 
 # Generate messages in the 'msg' folder

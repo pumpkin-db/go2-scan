@@ -22,6 +22,8 @@
        默认 true 保持人工观察工作流不变。 -->
   <arg name="gui" default="true"/>
   <arg name="rviz" default="true"/>
+  <!-- 地形跟随 z（楼梯/多层场景如 depot 开启；默认关保持 indoor_1 基线） -->
+  <arg name="terrain_follow" default="false"/>
 
   <!-- 1. Gazebo 场景 -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
@@ -45,6 +47,7 @@
   <node pkg="scan_planner" name="go2_kinematic_sim" type="go2_kinematic_sim" output="screen">
     <param name="publish_tf" value="true"/>
     <param name="init_yaw" value="$(arg init_yaw)"/>
+    <param name="terrain_follow" value="$(arg terrain_follow)"/>
   </node>
   <node pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
 

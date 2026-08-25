@@ -56,7 +56,7 @@ if [ -n "$SCENE" ]; then
   source $GO2_ROOT/scenes/$SCENE/env.sh 2>/dev/null || { echo "未知场景: $SCENE"; exit 1; }
   EXTRA_ARGS+=(world_file:="$SCENE_WORLD" gt_pcd:="$SCENE_GT"
                init_x:="$SPAWN_X" init_y:="$SPAWN_Y" init_z:="$SPAWN_Z"
-               init_yaw:="$SPAWN_YAW")
+               init_yaw:="$SPAWN_YAW" ${SCENE_EXTRA_ARGS:-})
 fi
 
 # 7) 启动

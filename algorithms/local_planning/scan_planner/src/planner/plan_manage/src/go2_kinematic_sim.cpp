@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
 
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Twist.h>
+#include <grid_map_msgs/GridMap.h>
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
 #include <tf/transform_broadcaster.h>
@@ -15,6 +17,7 @@ constexpr double kMaxVYawLimit = 1.0;
 
 ros::Publisher odom_pub;
 ros::Subscriber cmd_sub;
+ros::Subscriber elevation_sub;
 ros::Timer sim_timer;
 tf::TransformBroadcaster *tf_broadcaster = nullptr;
 
@@ -38,6 +41,19 @@ bool publish_tf = false;
 std::string frame_id = "world";
 std::string child_frame_id = "base";
 std::string body_pose_topic = "/quad_0/body_pose";
+
+// ---- 地形跟随 z（楼梯/多层仿真，2026-08-25）----
+// 开启后 z 不再恒为 init_z：积分 x/y 后查高程图 f(x,y)，z 向 h+body_height 限速趋近。
+// 高程图无效（未收到/越界/NaN）时保持上一 z（悬空保持，不跳变）。
+bool terrain_follow = false;
+std::string elevation_topic = "/elevation_mapping/elevation_map";
+double body_height = 0.25;   // 站高：狗体心离地高度
+double max_dz_rate = 0.8;    // z 变化限速 m/s（楼梯台阶的平滑下限）
+
+// 最新高程图快照（grid_map_msgs 手工采样，避免引入 grid_map_ros 运行时依赖）
+grid_map_msgs::GridMap::ConstPtr last_elevation;
+
+double sampleElevation(double px, double py);   // 前向声明（simCallback 先用）
 
 ros::Time last_cmd_time;
 ros::Time last_sim_time;
@@ -132,7 +148,67 @@ void simCallback(const ros::TimerEvent &)
   y += vy_world * dt;
   yaw = normalizeAngle(yaw + wz * dt);
 
+  // 地形跟随：查高程图，z 限速趋近 h+body_height（默认关闭，indoor_1 行为不变）
+  if (terrain_follow)
+  {
+    const double h = sampleElevation(x, y);
+    if (!std::isnan(h))
+    {
+      const double z_target = h + body_height;
+      if (dt > 1e-4)
+      {
+        const double dz = z_target - z;
+        const double dz_max = max_dz_rate * dt;
+        z += std::max(-dz_max, std::min(dz_max, dz));
+      }
+    }
+  }
+
   publishOdom(now);
+}
+
+void elevationCallback(const grid_map_msgs::GridMap::ConstPtr &msg)
+{
+  last_elevation = msg;
+}
+
+// 采样 grid_map 的 elevation 层（最近邻足够；越界/无数据返回 NaN）。
+// grid_map 布局：position 是地图中心；Index(0,0) 是 x 最小、y 最小的格；
+// data 按列主序（Eigen col-major）：data[row + col*rows]，row↔x、col↔y。
+double sampleElevation(double px, double py)
+{
+  if (last_elevation == nullptr)
+    return std::numeric_limits<double>::quiet_NaN();
+
+  const auto &gm = *last_elevation;
+  // 找 elevation 层
+  int layer = -1;
+  for (size_t i = 0; i < gm.layers.size(); ++i)
+    if (gm.layers[i] == "elevation")
+    {
+      layer = (int)i;
+      break;
+    }
+  if (layer < 0)
+    return std::numeric_limits<double>::quiet_NaN();
+
+  const float res = gm.info.resolution;
+  const int rows = gm.data[layer].layout.dim[0].size;   // x 方向格数
+  const int cols = gm.data[layer].layout.dim[1].size;   // y 方向格数
+  const double half_x = rows * res * 0.5;
+  const double half_y = cols * res * 0.5;
+  const double x0 = gm.info.pose.position.x - half_x;   // 地图 x 下缘
+  const double y0 = gm.info.pose.position.y - half_y;
+
+  const int ix = (int)std::floor((px - x0) / res);
+  const int iy = (int)std::floor((py - y0) / res);
+  if (ix < 0 || ix >= rows || iy < 0 || iy >= cols)
+    return std::numeric_limits<double>::quiet_NaN();
+
+  const float v = gm.data[layer].data[ix + iy * rows];  // col-major
+  if (std::isnan(v))
+    return std::numeric_limits<double>::quiet_NaN();
+  return (double)v;
 }
 } // namespace
 
@@ -160,6 +236,17 @@ int main(int argc, char **argv)
   nh.param("publish_tf", publish_tf, false);
   nh.param("frame_id", frame_id, std::string("world"));
   nh.param("child_frame_id", child_frame_id, std::string("base"));
+  // 地形跟随（楼梯/多层）：默认关。Depot 等多层场景 launch 里开 terrain_follow:=true
+  nh.param("terrain_follow", terrain_follow, false);
+  nh.param("elevation_topic", elevation_topic, std::string("/elevation_mapping/elevation_map"));
+  nh.param("body_height", body_height, 0.25);
+  nh.param("max_dz_rate", max_dz_rate, 0.8);
+  if (terrain_follow)
+  {
+    elevation_sub = node.subscribe(elevation_topic, 1, elevationCallback);
+    ROS_WARN("[Go2 kinematic sim] terrain_follow ON: z 跟随 %s (body_height=%.2f, dz<=%.2f m/s)",
+             elevation_topic.c_str(), body_height, max_dz_rate);
+  }
 
   tf::TransformBroadcaster broadcaster;
   tf_broadcaster = &broadcaster;

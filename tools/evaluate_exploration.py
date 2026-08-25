@@ -179,7 +179,8 @@ def evaluate(traj, scan_xyz, gt_xyz, algo, scene):
     prev_er = 0.0
     for i in range(0, len(traj), sample_every):
         row = traj[i]
-        vis = visible_voxels(gt_xyz, gt_packed, row, SENSOR_RANGE)
+        # 行结构 [t,x,y,z,yaw]：位姿取 [1:5]，别把 t 当 x（2026-08-25 ER 全零 bug 根因）
+        vis = visible_voxels(gt_xyz, gt_packed, row[1:5], SENSOR_RANGE)
         observed |= vis
         er = len(observed) / n_total
         t = row[0]
@@ -350,6 +351,9 @@ def main():
     print('轨迹 %d 帧｜scan_map %d pts｜GT %d pts' % (len(traj), len(scan_xyz), len(gt_xyz)))
 
     res, curve = evaluate(traj, scan_xyz, gt_xyz, args.algo, args.scene)
+    # 轨迹降采样持久化（~5Hz）：ER 算法有 bug 时可离线重算，不用重跑仿真
+    if len(traj) > 10:
+        res['trajectory_5hz'] = np.array(traj)[::50].round(4).tolist()
     stamp = wall_time.strftime('%Y%m%d_%H%M%S')
     tag = '%s_%s_%s' % (args.algo, args.scene, stamp)
     write_report(res, curve, args.out, tag)
