@@ -91,10 +91,14 @@
   </node>
 
   <!-- 7. 累积扫描点云（scan_map）：mid360 -> 世界系累积。
-       输入随分支切换：ariadne 吃门控后的 _clean（退化帧不进累积图，防漂移）；
-       tare 保持原始 /mid360_points（基线行为不变）。 -->
+       2026-08-26 两分支统一改回吃原始 /mid360_points：cloud_range_filter 的
+       max_range=6 裁剪只服务 octomap「看不见=unknown」语义（frontier 复活修复，
+       见 PROGRESS 2026-08-26 效用全零根因节）；建图层不应被连坐——比赛完整度
+       评分依赖全量程建图（ray 物理量程 40m）。accumulator 自带
+       min_range=0.3/max_range 过滤。历史动机「ariadne 吃 _clean 门控退化帧」
+       是 livox 插件时代的防漂移措施，velodyne 换装 + spawn 健康门后已无此患。 -->
   <node pkg="go2_bridge" name="scan_cloud_accumulator" type="scan_cloud_accumulator.py" output="screen">
-    <remap from="/mid360_points" to="$(arg scan_cloud)"/>
+    <param name="max_range" value="40"/>
   </node>
 
   <!-- 8. RViz（GPU 硬件渲染：WSL2 的 OpenGL 走 D3D12 直通 NVIDIA，无需软件渲染） -->

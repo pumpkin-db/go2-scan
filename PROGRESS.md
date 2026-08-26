@@ -427,3 +427,22 @@ RTF/预热✗（实测 0.84）、ODE 递归修复✗（无条件递归后依旧�
 
 ### 附带修正
 - utility_range_factor 澄清：launch 文件实际为 1.0（D2 复盘后改的），README 旧结论「维持官方 0.5」与文件不符——已在勘误节撤回该定稿表述。D3(n=1) 不构成扩环无增益的证据，待根因修复后重做 A/B。
+
+## 2026-08-26 续：ASAN 遗留破案 + 建图链恢复 + 修复后首验
+
+### #8 elevation_mapping exit code 1 破案
+- 前台裸跑复现：`AddressSanitizer:DEADLYSIGNAL` 死循环——**二进制是上次 ASAN 调试的遗留插桩版**（nm -D 可见 28 个 asan 符号），ASAN 默认 exitcode=1 即历次「exit code 1」死亡的真因。三字段修复是否有效曾被它掩盖。
+- 已 rm -rf build/devel 全量重编（需 -DPYTHON_EXECUTABLE=/usr/bin/python3 绕开 conda empy 干扰），asan 符号归零。cmu_env terrainAnalysisExt 与 tare ws 的 tare_planner_node 检查均 asan=0（TARE -11 另查）。
+- 修复后首跑中 /elevation_mapping/elevation_map 话题有发布者注册（待长稳观察）。
+
+### cloud_range_filter max_range=6 修复首验（bench_fix1，15min 短窗）
+- ✅ 核心修复生效：plateau 849s/902s（修复前 116-144s 即死），移动 246m、moving_ratio 57.1%，degraded=False 且为真正常收敛。
+- ⚠️ ER_final 29.0%（15min vs 历史 35min 不同窗，不可直接比）；R@0.2=30.1% 暴露新问题：**建图累加器被 max_range 裁剪连坐**，全量程建图能力丢失。
+- 行为模式变化如实记录：修复前「假 free 引导直线狂奔」单位路径覆盖虚高（η 0.0073）；修复后 frontier 引导细致探索 η 0.0012——两者口径不同，比较无意义。
+
+### 架构修正：规划/建图分层供云
+- scan_cloud_accumulator 改回两分支统一吃原始 /mid360_points + 自身过滤（max_range=40）：比赛完整度评分依赖全量程建图；cloud_range_filter 的 6m 裁剪只服务 octomap→rl_planner 链。「_clean 门控退化帧」是 livox 时代措施，velodyne+健康门后不再必要。
+- SCAN 局部规划器与 elevation_mapping 保持吃 ≤6m clean 云（工作区本就局部）。
+
+### 进行中
+- bench_fix2：Depot 35min 同窗对照跑（pid 3177742），与 D1-D3 同窗可比，验证修复后真实 ER 水平。
