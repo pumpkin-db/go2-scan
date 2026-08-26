@@ -296,11 +296,14 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
   }
 
   // Populate message fields
-  const uint32_t POINT_STEP = 22;
+  // 2026-08-25 go2-scan 增补：去掉 ring/time 字段，保持与旧 livox 输出完全一致的
+  // 16 字节 x/y/z/intensity 布局——下游多个节点（terrainAnalysis/elevation_mapping/
+  // tare_planner）按该布局裸解析，22 字节布局会触发段错误（exit -11 三连）。
+  const uint32_t POINT_STEP = 16;
   sensor_msgs::PointCloud2 msg;
   msg.header.frame_id = frame_name_;
   msg.header.stamp = ros::Time(_msg->time().sec(), _msg->time().nsec());
-  msg.fields.resize(6);
+  msg.fields.resize(4);
   msg.fields[0].name = "x";
   msg.fields[0].offset = 0;
   msg.fields[0].datatype = sensor_msgs::PointField::FLOAT32;
@@ -317,14 +320,6 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
   msg.fields[3].offset = 12;
   msg.fields[3].datatype = sensor_msgs::PointField::FLOAT32;
   msg.fields[3].count = 1;
-  msg.fields[4].name = "ring";
-  msg.fields[4].offset = 16;
-  msg.fields[4].datatype = sensor_msgs::PointField::UINT16;
-  msg.fields[4].count = 1;
-  msg.fields[5].name = "time";
-  msg.fields[5].offset = 18;
-  msg.fields[5].datatype = sensor_msgs::PointField::FLOAT32;
-  msg.fields[5].count = 1;
   msg.data.resize(verticalRangeCount * rangeCount * POINT_STEP);
 
   int i, j;
@@ -373,8 +368,6 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
         *((float*)(ptr + 4)) = r * cos(pAngle) * sin(yAngle); // y
         *((float*)(ptr + 8)) = r * sin(pAngle); // z
         *((float*)(ptr + 12)) = intensity; // intensity
-        *((uint16_t*)(ptr + 16)) = j; // ring
-        *((float*)(ptr + 18)) = 0.0; // time
         if (world_frame_) {
           float *f = reinterpret_cast<float *>(ptr);
           ignition::math::Vector3d p_sensor(f[0], f[1], f[2]);
@@ -390,8 +383,6 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
         *((float*)(ptr + 4)) = nanf(""); // y
         *((float*)(ptr + 8)) = nanf(""); // x
         *((float*)(ptr + 12)) = nanf(""); // intensity
-        *((uint16_t*)(ptr + 16)) = j; // ring
-        *((float*)(ptr + 18)) = 0.0; // time
         ptr += POINT_STEP;
       }
     }

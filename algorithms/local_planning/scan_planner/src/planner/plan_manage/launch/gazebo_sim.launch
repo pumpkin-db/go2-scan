@@ -118,6 +118,11 @@
   <group if="$(eval global_planner == 'tare')">
     <!-- TARE：world 点云 -> /registered_scan + /state_estimation_at_scan -> 决策 -> /way_point -->
     <node pkg="go2_bridge" name="tare_bridge" type="tare_bridge.py" output="screen"/>
+    <!-- 地形可通行性层（2026-08-25 补齐）：tare_planner 订阅 /terrain_map(+ext)，
+         CMU 默认输入恰为 /state_estimation + /registered_scan（tare_bridge 已产出），
+         此前漏启动导致 TARE 永不规划、狗站桩。 -->
+    <include file="$(env HOME)/claude/raicom/go2-scan/simulation/cmu_env/src/terrain_analysis/launch/terrain_analysis.launch"/>
+    <include file="$(env HOME)/claude/raicom/go2-scan/simulation/cmu_env/src/terrain_analysis_ext/launch/terrain_analysis_ext.launch"/>
     <node pkg="tare_planner" type="tare_planner_node" name="tare_planner_node" output="screen" ns="sensor_coverage_planner">
       <rosparam command="load" file="$(find tare_planner)/config/go2.yaml"/>
     </node>
