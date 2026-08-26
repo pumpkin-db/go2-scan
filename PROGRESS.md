@@ -446,3 +446,23 @@ RTF/预热✗（实测 0.84）、ODE 递归修复✗（无条件递归后依旧�
 
 ### 进行中
 - bench_fix2：Depot 35min 同窗对照跑（pid 3177742），与 D1-D3 同窗可比，验证修复后真实 ER 水平。
+
+## 2026-08-26 续2：row_step 一字节破三案（#8 收官在望）
+
+### 段错误根因链（PCL 源码级实锤）
+- elevation_mapping 稳定段错误（干净版 SIGSEGV -11；ASAN 版 DEADLYSIGNAL exitcode=1，两者同源）。
+- PCL1.10 fromPCLPointCloud2 会把 x/y/z 相邻字段合并为一次 size=12 的 memcpy（ASAN「READ of size 12」吻合），
+  且按行遍历时用 msg.row_step 寻址：`&msg.data[row * row_step]`。
+- **velodyne 插件上游 bug**：非 organize 分支把 row_step 写成整个点云字节数 `msg.data.size()` 而非
+  width×point_step(=16)。height>1 时第 1 行即从 data 末尾外开始读 → 堆越界 → 崩。
+- 受害者：elevation_mapping(fromPCLPointCloud2)、terrainAnalysisExt(fromROSMsg 同路径，即 TARE 链 -11)；
+  octomap/自研探针按 point_step 迭代不受影响——解释了为何只有 PCL 系消费者崩。
+- indoor_1 时代幸免：当时是 livox 插件；换装 velodyne 后才暴露。
+- 修复：GazeboRosVelodyneLaser.cpp `msg.row_step = POINT_STEP * msg.width;`（已注释完整因果）。
+  重编遇 /mnt/e Anaconda protobuf 污染 + cmake 缓存 → 清缓存 + 剔 /mnt 路径 + 强制系统 protobuf 后 exit=0。
+- 待验证：重启仿真后 elevation_map 出帧、terrainAnalysisExt 存活 → #4 几何检测解锁。
+
+### 其他
+- em 复现实验教训：裸跑 elevation_mapping 不带 launch rosparam 是空转（input_sources 默认话题不对），
+  「合成消息不崩」的第一次结论作废；正确做法是挂同名 __name:=elevation_mapping 吃参数服务器配置。
+- bench_fix2（Depot 35min 同窗对照）仍在跑，出数后填对照表。

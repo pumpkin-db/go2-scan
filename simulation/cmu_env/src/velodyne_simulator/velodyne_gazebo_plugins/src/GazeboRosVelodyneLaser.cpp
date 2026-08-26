@@ -397,7 +397,13 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
   } else {
     msg.width = 1;
     msg.height = msg.data.size() / POINT_STEP;
-    msg.row_step = msg.data.size();
+    // 2026-08-26 段错误根因修复：row_step 必须是一行的字节数(width*point_step=16)，
+    // 上游 Dataspeed 原版误写整个 data 大小。下游 pcl::fromPCLPointCloud2 按行遍历
+    // (row*row_step 寻址) 时第 1 行即越过缓冲区末尾——ASAN 实证 heap-buffer-overflow
+    // READ of size 12(x/y/z 合并 memcpy)，曾致 elevation_mapping 稳定段错误
+    // （exit -11/-1 双形态：干净版 SIGSEGV、ASAN 版 DEADLYSIGNAL exitcode=1）。
+    // octomap/自研节点按 point_step 迭代不受影响，故仅 PCL 系消费者崩溃。
+    msg.row_step = POINT_STEP * msg.width;
     msg.is_dense = true;
   }
 
