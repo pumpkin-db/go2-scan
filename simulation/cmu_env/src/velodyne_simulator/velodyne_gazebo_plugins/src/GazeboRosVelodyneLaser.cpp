@@ -296,14 +296,15 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
   }
 
   // Populate message fields
-  // 2026-08-25 go2-scan 增补：去掉 ring/time 字段，保持与旧 livox 输出完全一致的
-  // 16 字节 x/y/z/intensity 布局——下游多个节点（terrainAnalysis/elevation_mapping/
-  // tare_planner）按该布局裸解析，22 字节布局会触发段错误（exit -11 三连）。
+  // 2026-08-25 go2-scan 增补：只声明 x/y/z 三字段（step=16 与旧 livox 完全一致，
+  // intensity 数据仍写入 offset12 但不声明——ASAN 实证 PCL1.10
+  // fromPCLPointCloud2<PointXYZRGBConfidenceRatio> 对多余字段声明的 memcpy 越界读，
+  // 曾致 elevation_mapping/terrainAnalysis/tare_planner 三连段错误）。
   const uint32_t POINT_STEP = 16;
   sensor_msgs::PointCloud2 msg;
   msg.header.frame_id = frame_name_;
   msg.header.stamp = ros::Time(_msg->time().sec(), _msg->time().nsec());
-  msg.fields.resize(4);
+  msg.fields.resize(3);
   msg.fields[0].name = "x";
   msg.fields[0].offset = 0;
   msg.fields[0].datatype = sensor_msgs::PointField::FLOAT32;
@@ -316,10 +317,6 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
   msg.fields[2].offset = 8;
   msg.fields[2].datatype = sensor_msgs::PointField::FLOAT32;
   msg.fields[2].count = 1;
-  msg.fields[3].name = "intensity";
-  msg.fields[3].offset = 12;
-  msg.fields[3].datatype = sensor_msgs::PointField::FLOAT32;
-  msg.fields[3].count = 1;
   msg.data.resize(verticalRangeCount * rangeCount * POINT_STEP);
 
   int i, j;

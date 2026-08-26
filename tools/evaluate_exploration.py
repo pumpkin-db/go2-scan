@@ -42,6 +42,7 @@ FOV_V_MIN = math.radians(-7.0)
 FOV_V_MAX = math.radians(52.0)
 LIDAR_OFFSET = np.array([0.2, 0.0, 0.2077])   # base→mid360 外参（同 gazebo_bridge）
 PLATEAU_GAIN = 0.002        # ER 增益低于此视为平台期
+SPEED_MIN = 0.05            # m/s，低于此视为罚站噪声不累计路径（2026-08-26 审查A2）
 
 
 def pc2_to_xyz(cloud_msg):
@@ -159,8 +160,13 @@ def evaluate(traj, scan_xyz, gt_xyz, algo, scene):
     dt = np.diff(traj[:, 0])
     step = np.hypot(np.diff(traj[:, 1]), np.diff(traj[:, 2]))
     valid = (dt > 0) & (dt < 1.0) & (step < 2.0)   # 防传送尖刺
-    path_len = float(step[valid].sum())
+    # 2026-08-26 审查A2修正：100Hz 下 dt<1.0 形同虚设，罚站期里程计噪声逐样本
+    # 累积（Depot D1 实测站 33min 记 76m）。加速度门：只累计速度>0.05m/s 的位移。
+    speed = np.where(dt > 0, step / np.maximum(dt, 1e-9), 0.0)
+    moving = valid & (speed > SPEED_MIN)
+    path_len = float(step[moving].sum())
     duration = float(traj[-1, 0] - traj[0, 0])
+    move_time = float(dt[moving].sum())
 
     if len(gt_xyz) == 0:
         raise SystemExit('没有收到 /map（GT 点云）——map_pub 是否启动？')
@@ -194,12 +200,15 @@ def evaluate(traj, scan_xyz, gt_xyz, algo, scene):
         prev_er = er
     er_final = prev_er
 
-    # 退化跑自动判废（2026-08-25 三跑对照结论：退化=ER 极早平台期+路径异常短）。
-    # 判据：覆盖在 <5% 时长内即平台化，或 <1% 时长内路径已停但仿真继续。
-    degraded = bool(last_gain_t < 0.05 * duration) if duration > 0 else False
+    # 退化跑自动判废。2026-08-26 审查B2修正：原 0.05×duration(=105s@35min) 被
+    # 「~2min 正常探索后规划器失明」的新故障模式擦边逃过（D1-D3 plateau 116-144s），
+    # 收紧到 15%×duration 并加 ER 上限条件——完整探索不应在 15% 时长内就停止增长。
+    degraded = bool(duration > 0 and last_gain_t < 0.15 * duration and er_final < 0.95)
     res['exploration'] = {
         'duration_s': duration,
         'path_length_m': path_len,
+        'move_time_s': move_time,
+        'moving_ratio': round(move_time / duration, 3) if duration > 0 else None,
         'er_final': er_final,
         't90_rel_s': first_cross[0.90],
         't95_rel_s': first_cross[0.95],
@@ -235,7 +244,8 @@ def write_report(res, curve, out_dir, tag):
         for a, b in zip(ct, ce):
             f.write('%.2f,%.4f\n' % (a, b))
     with open(os.path.join(out_dir, '%s.json' % tag), 'w') as f:
-        json.dump(res, f, indent=2, ensure_ascii=False)
+        # default=float：numpy 标量(np.bool_/np.float64)忘转类型时兜底，不再整份报告炸掉
+        json.dump(res, f, indent=2, ensure_ascii=False, default=float)
 
     e = res['exploration']
     m = res.get('map_quality', {})

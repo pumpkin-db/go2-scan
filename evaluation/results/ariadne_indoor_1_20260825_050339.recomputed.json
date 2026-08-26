@@ -1,0 +1,14 @@
+{
+  "file": "ariadne_indoor_1_20260825_050339.json",
+  "algo": "ariadne",
+  "scene": "indoor_1",
+  "old_path_m": 11.47,
+  "net_path_m": 11.36,
+  "water_ratio": 1.01,
+  "moving_ratio": 0.011,
+  "duration_s": 2106.2,
+  "plateau_s": 28.0,
+  "er_final": 0.1454,
+  "new_degraded": true,
+  "eta_cov_per_m_net": 0.012801
+}

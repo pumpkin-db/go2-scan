@@ -1,0 +1,14 @@
+{
+  "file": "ariadne_depot_20260825_133232.json",
+  "algo": "ariadne",
+  "scene": "depot",
+  "old_path_m": 67.24,
+  "net_path_m": 67.22,
+  "water_ratio": 1.0,
+  "moving_ratio": 0.057,
+  "duration_s": 2112.1,
+  "plateau_s": 115.6,
+  "er_final": 0.4919,
+  "new_degraded": true,
+  "eta_cov_per_m_net": 0.007319
+}
