@@ -466,3 +466,34 @@ RTF/预热✗（实测 0.84）、ODE 递归修复✗（无条件递归后依旧�
 - em 复现实验教训：裸跑 elevation_mapping 不带 launch rosparam 是空转（input_sources 默认话题不对），
   「合成消息不崩」的第一次结论作废；正确做法是挂同名 __name:=elevation_mapping 吃参数服务器配置。
 - bench_fix2（Depot 35min 同窗对照）仍在跑，出数后填对照表。
+
+## 2026-08-26 续3：fix2 出数（ER 新高+建图链翻车）→ 修复 → fix3 在跑
+
+### bench_fix2（35min 同窗对照，max_range 裁剪生效版）结果
+- ✅ 规划侧：**ER_final 51.4%**（同窗历史最高，> D1-D3 的 43.5/49.2/48.0）；plateau 1767s/2101s（84% 时长）；轨迹 578.5m；degraded=False 真正常。「效用全零」根因修复在同窗下确认有效。
+- ❌ 建图侧崩：scan 仅 4877 点（fix1 为 15.7万）、R@0.2=2.4%、Chamfer 3.95m。
+- 根因：accumulator 用的 noetic `pc2.read_points` 对本链路点云有 unpack_from 越界(struct.error)，
+  逐帧异常 → 几乎零积累（4877 点为残余）。此前探针也踩过同款报错。
+- 修复：scan_cloud_accumulator.py 改 numpy 直析（width×height×point_step 校验 + frombuffer）。
+
+### row_step 一字节破三案（详见上节）
+- elevation_mapping 段错误(-11/-1 双形态)与 terrainAnalysisExt -11 同根：
+  PCL fromPCLPointCloud2/fromROSMsg 按行(row_step)遍历，velodyne 插件上游把 row_step
+  写成整云字节数 → 第 1 行即越界读 12 字节(x/y/z 合并 memcpy)。插件已修+重编(exit=0)。
+- 编译坑留档：cmu_env 重编需清 build/CMakeCache.txt + PATH/CMAKE_PREFIX_PATH/LD_LIBRARY_PATH
+  剔除 miniconda 与 /mnt/e(Windows Anaconda protobuf 污染) + -Dprotobuf_DIR=系统路径。
+
+### bench_fix3（进行中，全套修复叠加）
+- 内容：row_step 修复版插件 + accumulator 直析 + 规划6m/建图40m 分层供云。
+- 预期：ER ≥51% 且 scan_map 点数恢复 ≥10万级、R@0.2 回升；elevation_mapping 应存活出帧。
+- 启动健康门通过（中位 7.36m）。35min 后出数。
+
+### 论文阅读（#6 本轮 3 篇，笔记待落盘）
+- Asymptotically-Bounded 3D Frontier (RA-L26 Lima组)：frontier 并入 raycast 前向模型 O(|F|)；
+  Alg.3「frontier 离机器人过近即删」；GP 回归估增益。借鉴点：其 SLAM子图→Octomap 架构与我们一致；
+  3D 直接维护 frontier 可避免我们刚发现的「2D 投影口径失真」，但违背 ARiADNE 官方原版原则，仅记录。
+- Becoy Go2 Coverage CPP (Frontiers25 TU Delft)：先验 2D 图→形态学骨架→叶节点贪心+Dijkstra→FSM。
+  **前提是有先验地图，与比赛未知场地不符**；真正价值=探索完成后扫尾覆盖级（比 frontier 更保完整度），
+  开源 ROS2 可参考算法自写 Python 胶水(scipy.morphology+networkx)。
+- MA-SLAM (25.11)：2D DRL active SLAM，结构化张量表示。环境 400-520m²、Gmapping 2D——与比赛
+  3D 赋色需求不匹配，DRL 训练成本高，价值低。

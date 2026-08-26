@@ -41,9 +41,15 @@ class ScanAccumulator:
         self.pose = msg.pose.pose
 
     def cloud_cb(self, msg):
-        pts = np.array([[p[0], p[1], p[2]]
-                        for p in pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True)],
-                       dtype=np.float64)
+        # 2026-08-26 改 numpy 直析：noetic pc2.read_points 对本链路点云存在
+        # unpack_from 越界(struct.error)，逐帧异常导致积累量骤减（bench_fix2
+        # 实证 scan 仅 4.9k 点）。三字段 step16 布局由 velodyne 插件保证。
+        n = msg.width * msg.height
+        if n == 0 or len(msg.data) < n * msg.point_step:
+            return
+        arr = np.frombuffer(bytes(msg.data), dtype=np.uint8).reshape(n, msg.point_step)
+        xyz = arr[:, :12].copy().view(np.float32).reshape(n, 3)
+        pts = xyz[~np.isnan(xyz).any(axis=1)].astype(np.float64)
         if len(pts) == 0:
             return
         # 点云已是世界系（livox 插件直接输出），无需坐标变换
