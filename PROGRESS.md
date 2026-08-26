@@ -405,3 +405,25 @@ RTF/预热✗（实测 0.84）、ODE 递归修复✗（无条件递归后依旧�
 
 ### 当前第一优先级
 任务#11「为什么 ~2 分钟后 ARiADNE 效用全零」——ER 仅 48% 时规划器无候选目标，这比上楼和天花板都重要。elevation_mapping 当晚又死一次（exit code 1，00:30:54，非段错误，日志文件缺失待查 stderr 去向）。
+
+## 2026-08-26 效用全零根因破案 + 修复（任务#11 里程碑）
+
+### 尸检链（全部活体实测证据）
+1. rl_planner 开跑 216s 墙钟宣布 Completed：效用全零+地图静止20s → 停滞判定放行。
+2. /projected_map 解剖（站桩现场）：unknown 仅 5.6%、free 81.1%、occ 13.3% —— 2D 图自认为探完了。
+3. GT 裁决（剔地面、障碍带 z∈[0.25,1.8]）：GT 障碍格 2287 个中 ~42% 被标 free；octree 全场仅 2623 占据叶、z∈[0.2,0.7]、GT 障碍表面点最近邻中位 0.556m —— **墙从来没被建进 octree**。
+4. 排除清单：lidar_pose/body_pose/Gazebo物理真值三者一致(14.18,6.08)/(14,6)/(14,6) 无罪；/mid360_points 到 GT 中位差 0.030m 完全真实。（自查教训：曾把 worldFrame 点云再变换一次制造出 15.5m「假漂移」假信号，已识别废弃。）
+5. 病灶定性（口径错位，非几何 bug）：
+   - Gazebo ray 物理量程 **40m**（URDF），一帧扫全场（sensor_scan P95=13.75m 最大 31.7m）；
+   - octomap `sensor_model/max_range=6`：>6m 端点只清空沿途 free、永不产生占据；
+   - z 带 [0.2,0.8]（indoor_1 小房间遗产）把墙身/楼梯主体排除在插入之外；
+   - 净效果：看得见的远处=free 而非 unknown → frontier 枯竭 → 效用全零。
+   - indoor_1 为何幸免：小房间墙总在 6m 内，语义破坏不暴露。
+
+### 修复（最小改动，恢复「看不见=unknown」语义）
+- integration/go2_bridge/scripts/cloud_range_filter.py：新增 `~max_range`（默认 0=禁用），按传感器水平距离裁远点。
+- gazebo_sim.launch ariadne 分支：max_range=planner_sensor_range(默认 6) 与 octomap/评估器同口径。
+- 待办：Depot 重跑验证（预期 frontier 复活、plateau 大幅推迟）；indoor_1 回归一次防基线破坏。
+
+### 附带修正
+- utility_range_factor 澄清：launch 文件实际为 1.0（D2 复盘后改的），README 旧结论「维持官方 0.5」与文件不符——已在勘误节撤回该定稿表述。D3(n=1) 不构成扩环无增益的证据，待根因修复后重做 A/B。

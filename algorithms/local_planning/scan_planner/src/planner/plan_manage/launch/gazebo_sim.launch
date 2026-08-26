@@ -134,8 +134,17 @@
   <group unless="$(eval global_planner == 'tare')">
     <!-- 近距过滤只在此分支启动：剔除传感器原点附近自体回波/零程退化点，
          否则污染 octomap 占据。TARE 路径不引入此节点，保持基线行为。 -->
+    <!-- max_range（2026-08-26 效用全零根因修复）：Gazebo ray 物理量程 40m，
+         一帧扫全场；octomap sensor_model/max_range=6 只对 ≤6m 端点产生占据、
+         远点仅清空沿途 free → 「看得见的远处」被错误表达成 free 而非 unknown，
+         frontier 枯竭 → rl_planner 216s 即效用全零宣布完成（Depot D1-D3 三跑
+         plateau 116-144s 的根因）。在此按 sensor_range 裁剪远点，恢复
+         「看不见=unknown」语义；与 octomap max_range / 评估器 SENSOR_RANGE 同口径。
+         indoor_1 小房间墙总在 6m 内，行为基本不变。 -->
+    <arg name="planner_sensor_range" default="6"/>
     <node pkg="go2_bridge" name="cloud_range_filter" type="cloud_range_filter.py" output="screen">
       <param name="min_range" value="0.7"/>
+      <param name="max_range" value="$(arg planner_sensor_range)"/>
     </node>
 
     <!-- ARiADNE 建图+决策链：sensorScanGeneration + map→world 恒等桥 + octomap_server +

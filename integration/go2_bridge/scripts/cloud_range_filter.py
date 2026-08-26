@@ -28,13 +28,18 @@ from nav_msgs.msg import Odometry
 class CloudRangeFilter:
     def __init__(self):
         self.min_range = rospy.get_param('~min_range', 0.7)
+        # 远距裁剪（2026-08-26 效用全零根因修复）：ray 物理量程 40m 下远点若放行，
+        # octomap(max_range=6m) 只清空其沿途 free 而不产生占据 → 未探索区被虚报为
+        # 自由空间、frontier 枯竭。裁到 planner 同款量程后「看不见=unknown」成立。
+        # 0 = 禁用（保持旧行为）。
+        self.max_range = rospy.get_param('~max_range', 0.0)
         # 传感器位姿还没收到时丢弃点云帧（否则无法判距）
         self.sensor_pos = None
         self.pub = rospy.Publisher('/mid360_points_clean', PointCloud2, queue_size=1)
         self.sub_pose = rospy.Subscriber('/quad_0/lidar_pose', Odometry, self.pose_cb, queue_size=1)
         self.sub_cloud = rospy.Subscriber('/mid360_points', PointCloud2, self.cloud_cb, queue_size=1)
-        rospy.loginfo('[cloud_range_filter] ready: /mid360_points -> /mid360_points_clean (min_range=%.2fm)',
-                      self.min_range)
+        rospy.loginfo('[cloud_range_filter] ready: /mid360_points -> /mid360_points_clean '
+                      '(min_range=%.2fm max_range=%.2fm)', self.min_range, self.max_range)
 
     def pose_cb(self, msg):
         p = msg.pose.pose.position
@@ -56,6 +61,8 @@ class CloudRangeFilter:
         xy = np.stack([arr['x'], arr['y']], axis=-1).astype(np.float64)
         d = np.linalg.norm(xy - self.sensor_pos[:2], axis=1)
         keep = d >= self.min_range
+        if self.max_range > 0:
+            keep &= d <= self.max_range
         kept = int(np.count_nonzero(keep))
         if kept == 0:
             return
