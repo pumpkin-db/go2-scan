@@ -18,7 +18,11 @@
   <arg name="planning_horizon" default="3.5"/>
 
   <!-- main node -->
-  <node pkg="scan_planner" name="scan_planner_node" type="scan_planner_node" output="screen" clear_params="true">
+  <!-- respawn（2026-08-26）：TARE 连发前瞻点中偶发 NaN 目标会致 FSM 全局轨迹时长
+       为 NaN → scan_replan_fsm.cpp:189 floor(NaN) 溢出 vector length_error 崩 -6
+       （bench_tare 两跑实证，崩后探索永久停摆）。桥端已过滤坏点（tare_goal_bridge），
+       respawn 兜底单次崩溃自愈。 -->
+  <node pkg="scan_planner" name="scan_planner_node" type="scan_planner_node" output="screen" clear_params="true" respawn="true" respawn_delay="2.0">
     <remap from="/grid_map/body_pose" to="$(arg body_pose_topic)"/>
     <remap from="/grid_map/sensor_pose" to="$(arg sensor_pose_topic)"/>
     <param name="grid_map/sensor_type" value="$(arg sensor_type)" type="str"/>

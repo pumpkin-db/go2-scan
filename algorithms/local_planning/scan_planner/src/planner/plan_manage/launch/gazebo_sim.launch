@@ -13,7 +13,12 @@
        ariadne 时 navi_mode 自动切 3（SCAN /initial_path 模式）、点云源切 _clean -->
   <arg name="global_planner" default="tare"/>
   <arg name="navi_mode_eff" value="$(eval '3' if global_planner != 'tare' else navi_mode)"/>
-  <arg name="scan_cloud" value="$(eval '/mid360_points_clean' if global_planner != 'tare' else '/mid360_points')"/>
+  <!-- 2026-08-26 两分支统一吃近距过滤云（原 tare 分支直吃原云已作废）：
+       velodyne 360° 下视射线含狗体自回波，tare 首跑实证 grid_map 起点被自占
+       阻塞 → A* 全败（bspline_optimizer.cpp:146 "a star error" 刷屏）→
+       scan_planner_node 反复失败后 exit -6。旧「tare 吃原云保基线」是 livox
+       时代结论，换装后未复测且已被今日实测推翻。 -->
+  <arg name="scan_cloud" value="/mid360_points_clean"/>
   <arg name="init_x" default="-7.5"/>
   <arg name="init_y" default="0.5"/>
   <arg name="init_z" default="0.25"/>
@@ -57,8 +62,8 @@
   </node>
 
   <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换）
-       点云源随分支切换：tare 用原始 /mid360_points（基线行为）；ariadne 用近距过滤后的
-       /mid360_points_clean（octomap 链与 SCAN 同源，避免自体回波进占据地图）。 -->
+       点云源：两分支统一吃近距过滤后的 /mid360_points_clean（见顶部 scan_cloud 注释，
+       2026-08-26 tare 分支改过滤云的根因记录）。 -->
   <include file="$(find scan_planner)/launch/advanced_param.xml">
     <arg name="is_real_world" value="false"/>
     <arg name="navi_mode" value="$(arg navi_mode_eff)"/>
@@ -119,12 +124,24 @@
                   -> /projected_map -> rl_planner(官方原版代码) -> /way_point
                   -> ariadne_goal_bridge 包装成 Path -> /initial_path -> SCAN navi_mode=3 局部规划。
                   运行：bash simulation/launch_gazebo_sim.sh global_planner:=ariadne -->
+
+  <!-- 近距过滤两分支共用（2026-08-26 从 ariadne 组上提）：min_range 剔狗体自回波；
+       max_range 分支差异化——ariadne=6 保 octomap「看不见=unknown」语义（效用全零
+       根因修复，见 PROGRESS 2026-08-26）；tare=40 只滤近场，远场供建图/TARE 全量程输入。 -->
+  <arg name="planner_sensor_range" value="$(eval '6' if global_planner != 'tare' else '40')"/>
+  <node pkg="go2_bridge" name="cloud_range_filter" type="cloud_range_filter.py" output="screen">
+    <param name="min_range" value="0.7"/>
+    <param name="max_range" value="$(arg planner_sensor_range)"/>
+  </node>
+
   <group if="$(eval global_planner == 'tare')">
-    <!-- TARE：world 点云 -> /registered_scan + /state_estimation_at_scan -> 决策 -> /way_point -->
+    <!-- TARE：world 点云 -> /registered_scan + /state_estimation(_at_scan) 双发 -> 决策 -> /way_point -->
     <node pkg="go2_bridge" name="tare_bridge" type="tare_bridge.py" output="screen"/>
-    <!-- 地形可通行性层（2026-08-25 补齐）：tare_planner 订阅 /terrain_map(+ext)，
-         CMU 默认输入恰为 /state_estimation + /registered_scan（tare_bridge 已产出），
-         此前漏启动导致 TARE 永不规划、狗站桩。 -->
+    <!-- 地形可通行性层（2026-08-25 补齐）：tare_planner 订阅 /terrain_map(+ext)。
+         2026-08-26 站桩破案：CMU 两节点源码硬编码订阅 /state_estimation
+         （terrainAnalysis.cpp:227 / terrainAnalysisExt.cpp:193），tare_bridge 现同时发
+         /state_estimation 与 _at_scan 双份位姿。此前注释称「已产出」与源码不符，系误判——
+         实际两节点饿死空转、TARE 永不规划、狗站桩（bench_tare 首跑实证）。 -->
     <include file="$(env HOME)/claude/raicom/go2-scan/simulation/cmu_env/src/terrain_analysis/launch/terrain_analysis.launch"/>
     <include file="$(env HOME)/claude/raicom/go2-scan/simulation/cmu_env/src/terrain_analysis_ext/launch/terrain_analysis_ext.launch"/>
     <node pkg="tare_planner" type="tare_planner_node" name="tare_planner_node" output="screen" ns="sensor_coverage_planner">
@@ -136,21 +153,6 @@
   </group>
 
   <group unless="$(eval global_planner == 'tare')">
-    <!-- 近距过滤只在此分支启动：剔除传感器原点附近自体回波/零程退化点，
-         否则污染 octomap 占据。TARE 路径不引入此节点，保持基线行为。 -->
-    <!-- max_range（2026-08-26 效用全零根因修复）：Gazebo ray 物理量程 40m，
-         一帧扫全场；octomap sensor_model/max_range=6 只对 ≤6m 端点产生占据、
-         远点仅清空沿途 free → 「看得见的远处」被错误表达成 free 而非 unknown，
-         frontier 枯竭 → rl_planner 216s 即效用全零宣布完成（Depot D1-D3 三跑
-         plateau 116-144s 的根因）。在此按 sensor_range 裁剪远点，恢复
-         「看不见=unknown」语义；与 octomap max_range / 评估器 SENSOR_RANGE 同口径。
-         indoor_1 小房间墙总在 6m 内，行为基本不变。 -->
-    <arg name="planner_sensor_range" default="6"/>
-    <node pkg="go2_bridge" name="cloud_range_filter" type="cloud_range_filter.py" output="screen">
-      <param name="min_range" value="0.7"/>
-      <param name="max_range" value="$(arg planner_sensor_range)"/>
-    </node>
-
     <!-- ARiADNE 建图+决策链：sensorScanGeneration + map→world 恒等桥 + octomap_server +
          rl_planner（官方原版 py）。接线契约依据见包内 launch 注释。 -->
     <include file="$(find rl_planner)/launch/go2_ariadne.launch"/>

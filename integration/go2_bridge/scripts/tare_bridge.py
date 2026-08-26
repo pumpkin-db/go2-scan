@@ -25,6 +25,10 @@ class TareBridge:
 
         self.reg_pub = rospy.Publisher('/registered_scan', PointCloud2, queue_size=1)
         self.state_pub = rospy.Publisher('/state_estimation_at_scan', Odometry, queue_size=1)
+        # 2026-08-26 站桩破案补充：CMU terrainAnalysis.cpp:227 与 terrainAnalysisExt.cpp:193
+        # 硬编码订阅 /state_estimation（非 _at_scan），此前无人发布 → 两地形节点静默空转、
+        # 无 /terrain_map(_ext)，tare_planner 缺地形输入永不规划。
+        self.se_pub = rospy.Publisher('/state_estimation', Odometry, queue_size=1)
         self.cloud_sub = rospy.Subscriber('/mid360_points', PointCloud2, self.cloud_cb, queue_size=1)
         self.body_pose_sub = rospy.Subscriber('/quad_0/body_pose', Odometry, self.body_pose_cb, queue_size=1)
         rospy.loginfo('[tare_bridge] ready: /mid360_points(world) -> /registered_scan (frame=%s)',
@@ -39,6 +43,7 @@ class TareBridge:
         out.pose = msg.pose
         out.twist = msg.twist
         self.state_pub.publish(out)
+        self.se_pub.publish(out)
 
     def cloud_cb(self, msg):
         # 点云已是世界系（livox 插件直接输出），原样转发，无需坐标变换

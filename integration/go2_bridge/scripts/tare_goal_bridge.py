@@ -26,6 +26,13 @@ class TareGoalBridge:
         # 启动后前 start_delay 秒不转发目标（狗静止、只扫描建图，避免初始地图不全导致穿墙）
         if time.time() - self.start_time < self.start_delay:
             return
+        # 2026-08-26 NaN 门（bench_tare 两跑崩 -6 根因）：TARE 偶发发布含 NaN/Inf
+        # 的前瞻点，FSM planGlobalTraj 后时长全 NaN → scan_replan_fsm.cpp:189
+        # floor(NaN) 转 int 溢出 → vector length_error SIGABRT。坏点在此丢弃。
+        p = msg.point
+        if not all(map(lambda v: v == v and abs(v) != float('inf'), (p.x, p.y, p.z))):
+            rospy.logwarn_throttle(5.0, '[tare_goal_bridge] 丢弃含 NaN/Inf 的 way_point: (%.3f, %.3f, %.3f)', p.x, p.y, p.z)
+            return
         goal = PoseStamped()
         goal.header = msg.header
         goal.header.frame_id = 'world'

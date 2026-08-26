@@ -497,3 +497,117 @@ RTF/预热✗（实测 0.84）、ODE 递归修复✗（无条件递归后依旧�
   开源 ROS2 可参考算法自写 Python 胶水(scipy.morphology+networkx)。
 - MA-SLAM (25.11)：2D DRL active SLAM，结构化张量表示。环境 400-520m²、Gmapping 2D——与比赛
   3D 赋色需求不匹配，DRL 训练成本高，价值低。
+
+## 2026-08-26 续4：fix3 出数——全修复栈验证通过，#11 关闭
+
+### bench_fix3（35min，ariadne @ depot）结果 ✅ 三项预期全部达成
+| 指标 | fix2（带病） | **fix3（全修复）** |
+|---|---|---|
+| ER_final | 51.4% | **53.8%**（历史新高）|
+| scan_map 点数 | 4,877 | **882,656** |
+| R@0.2 完整度 | 2.4% | **96.0%** |
+| P@0.2 精度 | 31.9% | 81.6% |
+| Chamfer 对称 | 3.946m | **0.110m** |
+| Acc/Comp mean | 0.388/7.504m | 0.140/**0.080m** |
+- 判废正常（degraded=False）；plateau 862s/2121s（40% 时长，较 fix2 的 84% 大幅改善但仍在）。
+- 报告：evaluation/results/ariadne_depot_20260826_033632.md
+- 结论：①row_step 修复 + ②accumulator numpy 直析 + ③规划6m/建图40m 分层供云，
+  三项修复叠加后规划与建图两侧同时达标。**「效用全零」问题闭环（#11 完成）。**
+
+### 附带清理
+- 发现并击毙残留 5.5h 的旧 TARE 评估器进程（昨晚22:04，订阅同话题），临死自写了一份
+  tare_depot_20260826_033733.md（自判退化跑，无污染风险，忽略即可）。
+
+### 进行中：bench_tare（35min，tare @ depot）
+- 目的：补齐「评一遍现有算法」的第二个算法对照（审查 A3）+ 验证 row_step 修复是否治愈
+  TARE 三连段错误（elevation_mapping 已实证复活 52帧/15s，剩 terrainAnalysisExt/tare_planner 待验证 = #8）。
+- 启动健康门通过（中位 8.62m）。监视器盯崩溃签名与出报告事件。
+
+### stair_detector 实测受阻（已排障）
+- 第一次启动即崩：`#!/usr/bin/env python3` 解析到无 numpy 的 miniconda python → ModuleNotFoundError。
+- 排障结论：须用 `/usr/bin/python3`（系统 python3.8 带 numpy 1.24.4）显式启动；等下一个 ariadne 跑时挂载实测（#4）。
+
+## 2026-08-26 续5：TARE 站桩根因破案（/state_estimation 饿死）→ 修桥重跑
+
+### bench_tare 第一跑作废（站桩实证）
+- spawn 健康门过（中位 8.62m），CMU 三节点全部存活无段错误（**row_step 修复对 TARE 链生效，
+  #8 段错误部分可结**：terrainAnalysisExt/tare_planner 不再 -11）。但狗 0 位移（出生点 -12.60, 0.14 采样 6s 无动）。
+- 决策链逐级探针：/registered_scan ✅、/state_estimation_at_scan ✅（tare_bridge 工作正常）、
+  **/terrain_cloud ❌、/way_point ❌** → 断点在 terrain 层。
+- **根因（源码级证据）**：terrainAnalysis.cpp:227 与 terrainAnalysisExt.cpp:193 硬编码订阅
+  `/state_estimation`，而 tare_bridge 只发 `/state_estimation_at_scan`；go2.yaml 只配了
+  tare_planner 自己的位姿话题（_at_scan 版本，正确）。两个地形节点收不到位姿 → 静默空转
+  （C++ 节点零日志输出连 .log 文件都没建）→ 无 /terrain_map(_ext) → TARE 无法规划。
+  launch 注释「CMU 默认输入恰为 /state_estimation + /registered_scan（tare_bridge 已产出）」
+  与源码不符，系当时误判未验证。
+- **修复**：tare_bridge.py 增加 /state_estimation 双发（胶水层一行发布器）；launch 注释更正。
+- scan_planner_node exit -6（SIGABRT）：TARE 分支控制由 closed_loop_controller 承担
+  （cmd_vel 发布者实查确认），该死亡不影响本分支主链，暂不追。
+
+### 当前动作
+- 杀掉站桩的 bench_tare（pid 3669563），清环境后带修复重启第二跑。
+- 论文笔记已落盘：try_algorithm/notes/论文笔记_3D_frontier与覆盖扫尾.md（#6 三篇）。
+
+## 2026-08-26 续6：第二重根因（A* 自回波阻塞）+ launch 统一过滤云 → 待重启验证
+
+### scan_planner_node exit -6 并非无关（推翻「不影响主链」初判）
+- rosout 时间线重建：scan_planner_node 前 ~86s 活着且**持续收到 TARE 目标**
+  （bspline_optimizer.cpp:146 "a star error, force return!" 反复刷屏 = TARE 在发 /way_point、
+  SCAN 的 A* 全部失败），03:43:24 崩 -6。控制链实查：closed_loop_controller 只吃
+  `planning/bspline`（SCAN 优化器输出）→ **SCAN 死 = 控制链断**，光修地形层狗也不会动。
+- A* 全败根因假设（分支差异对照）：grid_map 点源 tare=原始 /mid360_points（含 velodyne
+  360° 下视打到狗体的自回波）、ariadne=/mid360_points_clean（min_range=0.7 已滤）。
+  自回波占据起点周围 → 膨胀后 A* 出发即被围死。「tare 吃原云」的基线结论是 livox
+  时代（indoor_1 run3 ER=99.6%）产物，velodyne 换装后未复测，今日实测推翻。
+
+### launch 改动（gazebo_sim.launch）
+1. scan_cloud 两分支统一 `/mid360_points_clean`（删分支切换）。
+2. cloud_range_filter 从 ariadne 组上提为两分支共用，max_range 参数化：
+   ariadne=6（保 octomap unknown 语义）/ tare=40（只滤近场，远场供建图全量程）。
+3. 注释同步更新（含作废原因与证据行号）。
+
+### 下一步
+- 清环境重启 bench_tare 第二跑。观察点：①/terrain_map(_ext) 是否出流；
+  ②A* 是否还报错；③scan_planner_node 是否存活；④狗是否移动。
+- 若 A* 修复后 scan_planner_node 仍崩 -6 → 查 Eigen/优化器对退化输入的断言（上游 bug）。
+
+## 2026-08-26 续7：TARE 第二重根因破案（NaN 目标 → vector length_error）→ 第三跑在跑
+
+### 第二跑结果：地形层修复生效 ✅，但规划器又崩 -6 ❌
+- spawn 健康门过（8.21m）；**/terrain_map 11843 点、/terrain_map_ext 14361 点出流**
+  （首跑全死）→ tare_bridge 双发位姿修复验证成功，#8 的「CMU 节点饿死」闭环。
+- 但 scan_planner_node 于 wall 04:16:47 再次 exit -6，狗全程未动。
+- 排障插曲：pgrep -f 自匹配陷阱——查询命令本身含模式串导致每次匹配到 1 秒大的
+  bash 假进程，「节点存活」为误报。此后用 `ps -eo pid,comm | grep -w` 精确查。
+
+### 崩溃根因（bench_sim.log + 源码级证据）
+```
+Triggered!                                    ← waypointCallback 接受了目标
+terminate called after throwing 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+```
+- 因果链：TARE 偶发发布含 NaN 的前瞻点 → tare_goal_bridge 原样转发 → FSM
+  planGlobalTraj 各段时间 = dist/max_vel 全 NaN → global_duration_ NaN →
+  scan_replan_fsm.cpp:189 `int i_end = floor(duration/0.1)` 转 int 溢出 →
+  :190 `vector<Vector3d> gloabl_traj(i_end)` 抛 length_error → SIGABRT。
+  此前 74-89s 的 "a star error" 刷屏是同批目标的另一失败形态（A* 对坏目标失败但没崩），
+  崩在第一个触发 NaN 时长的目标上。
+- 注：ariadne 分支不受此害——rl_planner+goal_bridge 有去重门控且其目标经过
+  octomap 可达性筛选，从不产出 NaN。
+
+### 三层修复
+1. **tare_goal_bridge.py NaN 门**：x/y/z 任一为 NaN/Inf 即丢弃（logwarn_throttle 提示）。
+2. **advanced_param.xml respawn**：scan_planner_node 加 respawn="true" respawn_delay=2.0，
+   单次崩溃自愈不再永久停摆。
+3. 清理孤儿进程教训：kill_all_sim.sh 杀不死旧 roslaunch 的 C++ 孤儿（两跑各残留一对
+   terrainAnalysis 打架），重启前需 `ps -eo pid,comm | grep` 复核并手动补刀。
+
+### 当前动作
+- bench_tare 第三跑（pid 3952143）已启动，监视器盯 Triggered!/length_error/died 签名。
+- 观察点：NaN 门是否拦截（logwarn 出现）、scan_planner_node 若再崩是否 2s 内复活、狗是否动起来。
+
+### stair_detector 进展（#4）
+- 注册表半链路实测通过：/stairs_detected 正常发布 main_east 条目
+  （entry{12.87,0.40,0.44}→exit{12.87,3.20,2.76}, source=registry），/stairs_markers 同发。
+- 几何检测半链路待狗走近楼梯区（高程图就绪后 tick 自动升级为几何检出）。
+- 教训：rospy 节点 nohup 后 stdout 块缓冲，日志空≠进程死；探针消息类型要先查源码。
