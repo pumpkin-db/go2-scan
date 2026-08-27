@@ -611,3 +611,248 @@ terminate called after throwing 'std::length_error'
   （entry{12.87,0.40,0.44}→exit{12.87,3.20,2.76}, source=registry），/stairs_markers 同发。
 - 几何检测半链路待狗走近楼梯区（高程图就绪后 tick 自动升级为几何检出）。
 - 教训：rospy 节点 nohup 后 stdout 块缓冲，日志空≠进程死；探针消息类型要先查源码。
+
+## 2026-08-26 续8：TARE 第三跑早期信号——狗动起来了（分支首次）
+
+### 三层修复全部生效的实证
+- spawn 健康门过（8.34m）；**狗已离开出生点**（-10.64，前进 ~2m，TARE 分支历史首次移动）；
+- /planning/bspline 22 点轨迹正常产出（SCAN FSM 规划链恢复）；
+- NaN 门本跑拦截 0 次（NaN 为偶发，门是保险丝）；
+- run2 的 elevation_mapping TF 报错风暴在 run3 消失（0 次）——疑似 run2 孤儿
+  terrainAnalysis 双实例打架所致，佐证「重启前必须复核孤儿」教训；
+- 高程图健康：36×22m res0.05、12 层齐全、13.8 万有效格、高程范围 [-0.05,9.57]m。
+- 备份：git 6d1b357 已推送 GitHub（fix3 数据 + TARE 双根因修复 + 文档勘误）。
+
+## 2026-08-26 续9（例行维护）：第三跑中期检查 + 交接前状态快照
+
+### 已验证的运行状态（本小节时间点的实测）
+- bench_tare 第三跑进程链全活：run_benchmark(pid 3952143)、gzserver、scan_planner_node、
+  tare_planner_node 均在；监视器曾因会话边界断线一次，已重挂。
+- **狗仍在出生点附近徘徊**：先后实测 -10.64/-10.54/-11.33（出生点 -12.74），
+  最大位移约 2.3m，出现过去而复返。bspline 在产出（22 点）、无 length_error、NaN 门 0 拦截。
+  结论：控制链全通、狗会动，但**尚未进入长距离探索**——这是当前卡点（见交接说明）。
+- 高程图健康：36×22m res0.05、12 层、13.8 万有效格；run2 的 TF 报错风暴在 run3 为 0 次。
+- stair_detector（pid 见 /tmp/stair_det2.log）在跑，注册表条目持续发布。
+
+### 论文（#6）
+- 读毕 Sim2Real_Coverage_2024.pdf（实为 IEEE Access 2025，Jonnarth 组，Linköping）：
+  2D 在线覆盖的 DRL，多尺度自中心 frontier 地图 + total-variation 覆盖奖励 +
+  两步 sim2real；代码开源（github.com/arvij/nl-cpp）。**结论（推断）**：与比赛 3D 赋色
+  需求不匹配且训练成本高，不作主线；TV 奖励思想可作扫尾覆盖参考。要点已记，独立笔记待补。
+
+## 2026-08-26 续10：TARE 封存定论 + 双算法对照落盘；UFEP 编译通过；B 验收材料就绪
+
+> 本节起工作主线按用户指示重排：**方向④（ARiADNE 楼梯识别+爬楼）为绝对主线**，
+> 方向② UFEP 为楼梯线备选全局层，方向③ 评分扩容、⑤ 论文为辅助填充。
+> 五大原始方向进度盘点：①狗腿✅（残留注记：基准跑稳定性 1/3 失败率未闭环）
+> ②UFEP 编译通过待跑通 ③标准落地、覆盖不全 ④场景机制✅+楼梯半链路
+> ⑤骨架好、KAIST 原文付费墙需用户机构通道下载。
+
+### 方向③：双算法对照表落盘（results/README.md 新增「算法对照表」节）
+- TARE run3（052638）：分支首个有效跑（degraded=False）ER 38.3%、轨迹 412.3m、
+  R@0.2=93.8%、P@0.2=73.1%、Chamfer 0.134m。
+- 对照 ARiADNE fix3 ER 53.8%：ARiADNE 显著占优（ER +15.5pt、轨迹效率 ~2.4×，
+  294m vs 412m）。TARE 完整度不差但清晰度明显低（建图噪点多，疑其地形层供云口径）。
+- 决策：TARE 封存不再排查（run2「出生点徘徊」不再追因），资源全转方向④。
+- 环境遗留：terrainAnalysis ×2 孤儿未补刀（kill 类命令被权限分类器持续挡，
+  恢复后先杀再起仿真——run2 TF 报错风暴=孤儿双实例打架的教训）。
+
+### 方向②：UFEP catkin_make 通过 ✅（build_ufep.sh 一把过）
+- 100% Built target：vrmapping_msgs/ui + CellsIntegratorGPU(CUDA nvcc) + vrmapping_node；
+  devel/lib 出 libCellsIntegratorGPU.so。此前两天被权限分类器挡住的编译命令一次成功。
+- 下一步：elevation 层来源决策（作者 cupy 分支 vs 自建 step_cutter/traversability/
+  cum_prob/normal 层）→ 最小探索 → 接统一评估器（任务#2/#5）。
+
+### 方向④：B 验收材料全部就绪（等分类器恢复即可一键执行）
+- gazebo_sim.launch 加 `global_planner:=none` 纯底座分支：无任何全局决策核，
+  FSM 由 navi_mode 直驱（=1 外部单点 / =2 keypoint.yaml 预设序列）；同步改
+  navi_mode_eff（仅 ariadne 强制 3）与 planner_sensor_range（仅 ariadne 6m）、
+  决策核 group 条件。用途：B 验收/传感链调试/D 组件 climb_mode 单测的干净底座。
+- 新建 scan_planner/tools/keypoint.yaml：navi_mode=2 预设航点（集结 11.2,0.4→
+  entry 12.87,0.40→exit 12.90,3.60），坐标取 scene.yaml 注册表 GT；FSM 硬编码
+  路径 `$(rospack find scan_planner)/../../../tools/` 已核实吻合本文件。
+- 新建 tools/drive_go2.py：P 控制遥控（body_pose 闭环→/cmd_vel），转向-前进解耦。
+- 新建 simulation/test_stair_climb.sh 一键 B 验收：清场复核→none 底座→spawn 健康门→
+  stair_detector→双记录器（pos.log/stairs.log）→三段推进→z 曲线+geometry 检出摘要。
+- 验收标准：狗 z 从 0.25 沿台阶连续升至 >1.0m（理论二层 ~3.0）；/stairs_detected
+  从 registry 兜底升级 source=geometry。
+
+## 2026-08-26 续11：B 验收二跑（狗横穿成功、terrain_follow 失效破案）、GT 高程路线落地、注册表方向疑案
+
+### B 验收二跑结果（修复 remote_drive + 绕行航线后）
+- 五段遥控推进：段1/2/5 rc=0，段3/4 超时但最终段5 把狗送到 (12.66, 3.05)
+  ——楼梯 exit (12.87,3.20) 旁。绕行路线（南通道 y=-5.5 穿三道隔断墙）实测可行。
+- cmd_vel 稀释修复实证：段2 南通道 18.5m 用时约 1min（≈0.3m/s），remote_drive
+  开关生效（一跑 0.014m/s → 二跑 0.3m/s）。
+- **但 terrain_follow 未生效**：狗水平穿越楼梯正上方，楼梯区 (x>11.5,y>2.0)
+  25149 帧 z 恒 0.412 —— 狗是从台阶几何里「平飘」穿过去的（运动学模型无碰撞）。
+
+### terrain_follow 失效双层根因（代码级+实测级）
+1. **go2_kinematic_sim.cpp sampleElevation 行列对调 bug**：grid_map 实际布局
+   dim[0]=y 方向（440×0.05=22m=length_y）、dim[1]=x，C++ 注释与代码假设
+   「row↔x」相反。探针实证：按 C++ 公式采样楼梯区全「越界」、平地报夹层值 5.3m。
+   → terrain_follow 自编译起从未正确工作过（一跑 z 的 0.35→0.58→0.64→0.25 乱跳
+   全是错位采样值恰在跳变限幅内被跟了）。
+2. **感知高程图在楼梯区不可用**：2.5D 每格单值，台阶面与天花板(6-9m)同格融合后
+   报上层表面（实测楼梯中线报 6.6-7.6），下段被 visibility_cleanup 清成 NaN。
+   → 即使修好行列，感知高程也带不动爬升。且 Depot 配置无 z 过滤。
+
+### GT 高程路线落地（设计文档阶段 B 预留的「场景 GT 高程」分支）
+- 新工具 tools/make_gt_elev.py：GT pcd → 0.05m 2.5D 高程二进制
+  （z≤4.0 滤天花板/夹层，空格 3×3 膨胀填充）。
+- 产物 scenes/depot/gt/elev_gt.bin：613×314，z∈[0.09,4.0]，平地/出生点 0.093 ✓。
+- 未完成接线：kinematic_sim 读 GT 高程文件（参数化数据源）→ 重编译 → 重跑 B。
+
+### ⚠ 新发现：楼梯注册表 entry/exit 疑写反（待仲裁）
+- GT 高程实测楼梯中线 x=12.87：y=0.0-0.8 处 2.69m（二层平台），y=3.2 处 0.51m
+  （地面）——沿 +y 是**下降**。而 scene.yaml 注册表 entry{y=0.4,z=0.44}→
+  exit{y=3.2,z=2.76}「沿 +y 爬升」方向相反。判断：y=0.4 侧是二层平台端、
+  y=3.2 侧接地，注册表 entry/exit 字段互换。影响：D 阶段 stair_transit 爬向；
+  stair_detector 几何检出的 yaw 恰可修正注册表（待几何验证后回填）。
+  （仲裁被分类器中断，GT 原始点两端 z 对照未跑完。）
+
+### 遗留清单（下次开工）
+1. kinematic_sim 接 GT 高程查表源 + 重编译 + 重跑 B 验收（z 应沿 0.41→2.9 爬升）
+2. stair_detector 几何检出验证——本次又栽在启动坑：rosrun 走 shebang env python3
+   → miniconda 无 numpy。必须 /usr/bin/python3 <全路径> 直接起（续9 教训复现）
+3. test_stair_climb.sh 两处修正：摘要解析器（rostopic echo 是单行 key: value，
+   解析器按「键独行」假设写错）、stair_detector 启动命令
+4. ~~UFEP 下一步：elevation 层来源路线决策~~ → **已作废，见续12 用户决定**
+   （cupy fork 已克隆至 new_algorithm/elevation_mapping_cupy_EleForUFEP，原地封存）
+5. MapExRL 论文未读（其余两篇笔记已落盘）
+
+## 2026-08-27 续12：UFEP 冻结决定 + 性质核实收官（短记录）
+
+### 用户决定（2026-08-27 会话，口头指示）
+- **UFEP 先不管（冻结）**：本体不跑通、不接管线；编译产物 ufep_ws 原地保留备查。
+  续11 遗留第 4 条（elevation 层来源路线决策）作废。
+- 与既有结论（try_algorithm/notes/UFEP思想评估.md）一致：不采用本体，
+  仅采纳两思想（沿线采样边检查→楼梯 transit 可达性验证；frontier 即图节点）。
+
+### UFEP 性质核实（本次会话源码级，补充思想评估）
+- **vrmapping 规划器本体 = 纯传统方法**：全源码无 torch/tensorflow/onnx 任何引用；
+  核心链路 = 采样撒点 + 几何边检查（沿线查高程差/可通行性）+ 图搜索。
+  CUDA 只用于 CellsIntegrator.cu 点云→高程图融合加速，非神经网络。
+- 上游 elevation_mapping_cupy fork 的 traversability 层**可选**挂小 CNN
+  （3 层 dilated conv，torch/chainer），但：权重走外部文件加载（load_weights），
+  克隆的 fork 里**无任何 .npz/.pth/.npy 权重**→ 开箱不可启用；且有纯经典替代
+  （cupy 滤波、traversability_polygon 几何规则）。→ 整条链可零深度学习运行。
+- 对照记忆：**ARiADNE（主力）才是深度学习**（MARMoT 系 RL 策略网络），
+  UFEP（已降级参考）反而是经典方法。两者均为现成开源实现，不违反禁自造约束。
+
+### 用户指示（2026-08-27，第二件事之前）
+- **评分系统的评分概念，用户之后会亲自具体了解**——评分扩容（任务#5）与指标细化
+  全部挂起，等用户看完概念再定；近期不动评分系统。
+- 工作重心：**楼梯检测 + 正常上楼梯**（方向④），按续11 遗留 1-3 开工。
+
+### 当前挂起事项（等用户下指令）
+- 楼梯主线按续11 遗留 1-3 待开工：GT 高程接 kinematic_sim → 重编译 → 重跑 B 验收；
+  stair_detector 几何验证；test_stair_climb.sh 两处修正。
+
+## 2026-08-27 续13：楼梯线遗留 1-3 代码全部改完（未编译未验证，等用户合跑）
+
+### 楼梯注册表方向仲裁——结案：写反了，已修
+- GT 点云直查（3608 点，楼梯带 |x-12.87|<0.3，z<4）：
+  - y<0.8（原 entry 端）：中位高 **2.53m**、最高 3.48 → 二层平台端
+  - y>2.5（原 exit 端）：中位高 **0.44m**、最高 1.24 → 接地端
+  - y 1-2.5 中段中位 1.73（过渡台阶）→ 完整单调坡面，方向唯一
+- 修正 `scenes/depot/scene.yaml`：entry=(12.87, **3.20**, 0.44 接地)、
+  exit=(12.87, **0.40**, 2.76 平台)、yaw_deg 90→**-90（沿 -y 爬升）**
+
+### go2_kinematic_sim.cpp 双修（scan_planner 包，**未重编译**）
+1. **行列对调 bug 修复**（感知路线，实机用）：dim[0]=y/dim[1]=x，
+   `data[iy + ix*rows]`，越界判断同步对调。
+2. **GT 高程查表源新增**：参数 `terrain_source`（gt_file/elevation，默认 gt_file）
+   + `gt_elev_file`；读 make_gt_elev.py 二进制格式（int32 nx,ny | float32 x0,y0,res
+   | float32 h[iy*nx+ix]），失败自动回退感知话题订阅。
+- 配套：`gazebo_sim.launch` 透传两参数；`scenes/depot/env.sh` SCENE_EXTRA_ARGS
+  追加 terrain_source:=gt_file + gt_elev_file:=…/elev_gt.bin。
+
+### test_stair_climb.sh 三修 + 航点改道
+1. stair_detector：rosrun → `$PY 全路径直起`（避 miniconda 无 numpy）
+2. 记录器：stdbuf → `PYTHONUNBUFFERED=1`（rostopic echo 是 Python 进程）
+3. 摘要解析器：单行 `x: 7.518` 正则版（截断科学计数法 try/except 跳过）
+4. 航点按修正后方向改道：段3 (11.2,3.5)、段4 (12.85,3.55 接地端前)、
+   段5 (12.87,0.15 沿 -y 爬，0.13m/s，timeout 300)——从楼梯北侧进场
+
+### 待合跑（用户指令后）
+- catkin_make 重编译 scan_planner → bash simulation/test_stair_climb.sh
+- 预期：GT 高程载入日志 + z 从 0.41 沿台阶爬至 ~2.9（段5）
+
+### 追加（同日）：重编译完成 + Depot 交互首跑准备就绪
+- **重编译 ✅**（04:05，含 GT 高程+行列修复）；自查堵漏一处：launch 声明了
+  terrain_source/gt_elev_file arg 却没传进节点 param，已补。
+- **实时评分进 RViz**：新工具 `tools/live_score_rviz.py`（增量 ER+路径+用时 →
+  /live_score 文本 Marker；import 复用评估器可见性函数，口径一致，官方评估器
+  未动）；经 go2_bridge/scripts/ 符号链接挂进 launch（修 realpath 解链接坑）。
+  默认跟随 rviz 开关 → 无头跑分零行为变化。
+- **default.rviz 新显示组 Score_Stairs**：/live_score、/stairs_markers、/initial_path。
+- **stair_detector 接进 launch**（arg stair_detect）；Depot env.sh 自动开——
+  注册表兜底橙箭头无条件发（已验证代码逻辑），几何检出蓝箭头依赖高程图。
+- **话题核查**：/map（GT 全场）、/scan_map（累积）、/frontier、/projected_map、
+  /way_point、octomap 系、grid_map 系、elevation_map、his_path、机器狗模型
+  原显示组全在；新加 3 个。/stairs_detected 是 String 只能终端看。
+- **dry-run 通过**：`roslaunch --nodes` 全参解析，22 节点无报错。
+- **启动命令（等用户指令）**：
+  `bash simulation/launch_gazebo_sim.sh scene:=depot global_planner:=ariadne`
+  （gui/rviz 默认 true；env.sh 自动带地形跟随+GT高程+楼梯检测）
+
+## 2026-08-27 续14：狗模型分体根治（刚体化，社区标准做法）+ 纹理官方格式修正
+
+### 狗分体问题（用户实测发现，此前验证有盲区）
+- 症状：狗走动时 12 条腿留在原地、身体传送走（link_states 实测：腿距身体
+  1.1-1.5m、抖动 2m+），站定后才归位。
+- 根因：腿连杆 <kinematic>true</kinematic> 后被物理引擎完全跳过，
+  set_model_state 传送 base 时关节约束不带它们走。此前方向①验证只测了
+  「关节角跟随指令」，从未测「连杆位置跟随身体」——验证盲区。
+- **修法（对齐社区/参考工程标准：机器人按刚体 + 官方驱动插件，不做传送式
+  关节动画）**：URDF 12 个腿关节 revolute→fixed，Gazebo 自动把 13 连杆合并为
+  单一刚体——物理上不可能再分体。teleport 机制保留（管线需要 Gazebo 狗位姿与
+  运动学里程计精确一致供雷达射线）。
+- 实测验证（Depot 世界）：腿连杆不再以独立体出现于 /gazebo/link_states（已合并）；
+  狗正常行走（-12→-10.35）；雷达健康门通过；零报错。
+- 代价：步态动画消失（腿固定零位站姿）。日后若要动画，走官方
+  gazebo_ros_control + position_controllers 全套（本机已装齐），不再自造。
+- 配套：gazebo_bridge 关节同步改为失败一次即永久关闭（刚体无活动关节），防刷错。
+
+### 纹理修正（对齐官方模型用法，砖箱模型为证）
+- 根因：SubT Depot 模型转经典 Gazebo 时 script 兜底 URI 写成相对路径，
+  经典 Gazebo 不认 → 材质永远找不到 → 白模。
+- 修法：16 处 <uri> 改官方格式 model://Depot/materials/scripts|textures；
+  4 个纯 PBR visual（货箱/风扇×3）补 script 兜底 + 新增 2 个材质定义；
+  撤销此前绕路的 media/ 符号链接与 GAZEBO_RESOURCE_PATH hack（官方用法只需
+  GAZEBO_MODEL_PATH）。ogre.log 实证 15 张贴图加载成功（余 3 张为 Emissive
+  自发光层，经典 Gazebo 不支持，不影响外观）。
+
+## 2026-08-27 续15：ARiADNE 相对 e438e07 差异定档 + 三个未决问题挂账（用户口述）
+
+### ARiADNE 链相对 e438e07 的全部差异（git 逐文件核实）
+决策包仅 3 个文件动过，网络结构/权重/效用计算/节点图/ariadne_goal_bridge/TF桥 逐字节未变：
+1. **算法级仅 1 处**：rl_planner.py 停滞式完成判定（效用全零 且 地图已知格静止满
+   20s 才判完成，~stalled_complete_seconds 可调；9500ef5，修 Depot 假完成）
+2. **参数 1 处**：utility_range_factor 0.5→1.0（效用环 3m→6m；⚠偏离官方值，
+   为 Depot 大场景规划停摆加的）
+3. **供云 1 处**：cloud_range_filter 加 max_range=6 裁剪（671e3f3，修「40m 量程
+   vs 6m 更新半径」口径错位致前沿枯竭）
+关键事实：三处全是 Depot 排障产物；用户的 indoor 高分跑（99.6%）发生在这些改动
+之前，当时状态≈e438e07。要复现 indoor 老行为需全退这三处；保 Depot 53.8% 则保留。
+
+### 狗模型折腾全程与当前状态（重要交接）
+- 用户实测发现：kinematic 腿版本走动时**分体**（腿留原地、身体传送走）——
+  此前方向①验证只测关节角未测连杆位置，验证盲区。
+- 之后多轮尝试（刚体化/阻尼/回退）均未让用户满意；**当前状态 = 腿完全等同
+  e438e07 原版（revolute 零阻尼带碰撞）+ base kinematic（必须保留：删了之后
+  乱甩的腿反踢身体→雷达抖→点云飞，实测复现过一次，已恢复）+ velodyne 雷达**。
+- 官方件备查：gazebo_ros_control + position/joint_state controllers 本机已装齐，
+  若日后要让 Gazebo 里的腿连续受控动画（不再靠传送摆腿），走那条标准路。
+  RViz 的 RobotModel 狗一直是干净动画（TF+ /joint_states 驱动，无物理参与）。
+
+### ⚠ 三个未决问题（用户 2026-08-27 实测口述，挂账待查）
+1. **狗腿还是乱飞，用户怀疑是高度问题**（当前 e438e07 腿=零阻尼物理关节，
+   乱飞是该版固有症状；「高度问题」为用户猜想，未验证——可查出生点 z/体高/
+   足底接触与甩腿的相关性）。
+2. **Depot 上探索很小，不能正常探索**（与本次会话航点日志实测吻合：航点长期
+   在出生点 ±2m 震荡；对比室内跑前 60s 即走出 23m。历史所有 Depot 跑均此慢启动，
+   嫌疑：大开阔场景前沿/效用区分度低，rl_planner 在近点间震荡）。
+3. **楼梯检测似乎无效**（用户 Depot 实测观感；未核实是注册表橙箭头没显示、
+   还是几何检出没触发。下次先问清现象再查）。
