@@ -1,7 +1,10 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <fstream>
 #include <limits>
 #include <string>
+#include <vector>
 
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Twist.h>
@@ -51,10 +54,28 @@ double body_height = 0.25;   // 站高：狗体心离地高度
 double max_dz_rate = 0.8;    // z 变化限速 m/s（楼梯台阶的平滑下限）
 double follow_max_jump = 1.0; // 单步跟随的最大 z 跳变（滤掉「另一层楼」的地表）
 
+// 高程数据源（2026-08-27）：感知高程图在楼梯区不可用（台阶面与天花板同格融合报
+// 上层、下段被清 NaN），仿真改用场景 GT 高程。实机保留感知高程图路线。
+//   "gt_file"       → 预计算 2.5D GT 高程二进制（干净、无天花板），仿真用
+//   "elevation"     → 订阅高程图话题（原路线），实机用
+std::string terrain_source = "gt_file";
+std::string gt_elev_file = "";   // make_gt_elev.py 产物（.bin）
+
 // 最新高程图快照（grid_map_msgs 手工采样，避免引入 grid_map_ros 运行时依赖）
 grid_map_msgs::GridMap::ConstPtr last_elevation;
 
-double sampleElevation(double px, double py);   // 前向声明（simCallback 先用）
+// GT 高程网格（行主序，与 make_gt_elev.py 对齐）
+struct GtElev {
+  int nx = 0, ny = 0;
+  float x0 = 0.f, y0 = 0.f, res = 0.05f;
+  std::vector<float> h;          // h[iy*nx + ix]
+  bool ok = false;
+} gt_elev;
+
+bool loadGtElev(const std::string &path);          // 读二进制
+double sampleGtElev(double px, double py);         // 最近邻查表
+double sampleElevMap(double px, double py);        // 感知高程图路线（实机）
+double sampleElevation(double px, double py);      // 前向声明（simCallback 先用）
 
 ros::Time last_cmd_time;
 ros::Time last_sim_time;
@@ -176,10 +197,68 @@ void elevationCallback(const grid_map_msgs::GridMap::ConstPtr &msg)
   last_elevation = msg;
 }
 
-// 采样 grid_map 的 elevation 层（最近邻足够；越界/无数据返回 NaN）。
-// grid_map 布局：position 是地图中心；Index(0,0) 是 x 最小、y 最小的格；
-// data 按列主序（Eigen col-major）：data[row + col*rows]，row↔x、col↔y。
+// 读 make_gt_elev.py 产物：int32 nx,ny | float32 x0,y0,res | float32 h[nx*ny]（iy*nx+ix）
+bool loadGtElev(const std::string &path)
+{
+  std::ifstream f(path, std::ios::binary);
+  if (!f)
+  {
+    ROS_ERROR("[Go2 kinematic sim] GT 高程文件打不开: %s", path.c_str());
+    return false;
+  }
+  int32_t nx, ny;
+  f.read(reinterpret_cast<char *>(&nx), 4);
+  f.read(reinterpret_cast<char *>(&ny), 4);
+  f.read(reinterpret_cast<char *>(&gt_elev.x0), 4);
+  f.read(reinterpret_cast<char *>(&gt_elev.y0), 4);
+  f.read(reinterpret_cast<char *>(&gt_elev.res), 4);
+  if (!f || nx <= 0 || ny <= 0 || gt_elev.res <= 0.f)
+  {
+    ROS_ERROR("[Go2 kinematic sim] GT 高程文件头非法: %s", path.c_str());
+    return false;
+  }
+  gt_elev.h.resize((size_t)nx * ny);
+  f.read(reinterpret_cast<char *>(gt_elev.h.data()), (std::streamsize)gt_elev.h.size() * 4);
+  if (!f)
+  {
+    ROS_ERROR("[Go2 kinematic sim] GT 高程文件体不全: %s", path.c_str());
+    return false;
+  }
+  gt_elev.nx = nx;
+  gt_elev.ny = ny;
+  gt_elev.ok = true;
+  ROS_WARN("[Go2 kinematic sim] GT 高程已载入: %s（%dx%d, res=%.3f, 原点 %.2f,%.2f）",
+           path.c_str(), nx, ny, gt_elev.res, gt_elev.x0, gt_elev.y0);
+  return true;
+}
+
+double sampleGtElev(double px, double py)
+{
+  if (!gt_elev.ok)
+    return std::numeric_limits<double>::quiet_NaN();
+  const int ix = (int)std::floor((px - gt_elev.x0) / gt_elev.res);
+  const int iy = (int)std::floor((py - gt_elev.y0) / gt_elev.res);
+  if (ix < 0 || ix >= gt_elev.nx || iy < 0 || iy >= gt_elev.ny)
+    return std::numeric_limits<double>::quiet_NaN();
+  const float v = gt_elev.h[(size_t)iy * gt_elev.nx + ix];
+  if (std::isnan(v))
+    return std::numeric_limits<double>::quiet_NaN();
+  return (double)v;
+}
+
+// 数据源分发：terrain_source="gt_file" 走预计算查表，"elevation" 走感知话题。
 double sampleElevation(double px, double py)
+{
+  if (terrain_source == "gt_file")
+    return sampleGtElev(px, py);
+  return sampleElevMap(px, py);
+}
+
+// 采样 grid_map 的 elevation 层（最近邻足够；越界/无数据返回 NaN）。
+// 布局（2026-08-26 探针实证修正）：MultiArrayLayout dim[0]=y 方向格数、
+// dim[1]=x 方向格数；position 是地图中心；data 为 col-major：data[iy + ix*rows]。
+// （旧版此处行列写反：把 dim[0] 当 x，致楼梯区采样全越界/错位——从未正确工作过。）
+double sampleElevMap(double px, double py)
 {
   if (last_elevation == nullptr)
     return std::numeric_limits<double>::quiet_NaN();
@@ -197,19 +276,19 @@ double sampleElevation(double px, double py)
     return std::numeric_limits<double>::quiet_NaN();
 
   const float res = gm.info.resolution;
-  const int rows = gm.data[layer].layout.dim[0].size;   // x 方向格数
-  const int cols = gm.data[layer].layout.dim[1].size;   // y 方向格数
-  const double half_x = rows * res * 0.5;
-  const double half_y = cols * res * 0.5;
+  const int rows = gm.data[layer].layout.dim[0].size;   // y 方向格数
+  const int cols = gm.data[layer].layout.dim[1].size;   // x 方向格数
+  const double half_x = cols * res * 0.5;
+  const double half_y = rows * res * 0.5;
   const double x0 = gm.info.pose.position.x - half_x;   // 地图 x 下缘
   const double y0 = gm.info.pose.position.y - half_y;
 
   const int ix = (int)std::floor((px - x0) / res);
   const int iy = (int)std::floor((py - y0) / res);
-  if (ix < 0 || ix >= rows || iy < 0 || iy >= cols)
+  if (ix < 0 || ix >= cols || iy < 0 || iy >= rows)
     return std::numeric_limits<double>::quiet_NaN();
 
-  const float v = gm.data[layer].data[ix + iy * rows];  // col-major
+  const float v = gm.data[layer].data[iy + ix * rows];  // col-major，row↔y
   if (std::isnan(v))
     return std::numeric_limits<double>::quiet_NaN();
   return (double)v;
@@ -246,11 +325,28 @@ int main(int argc, char **argv)
   nh.param("body_height", body_height, 0.25);
   nh.param("max_dz_rate", max_dz_rate, 0.8);
   nh.param("follow_max_jump", follow_max_jump, 1.0);
+  // 高程数据源：默认 gt_file（仿真）；实机切 terrain_source:=elevation 走感知话题
+  nh.param("terrain_source", terrain_source, std::string("gt_file"));
+  nh.param("gt_elev_file", gt_elev_file, std::string(""));
   if (terrain_follow)
   {
-    elevation_sub = node.subscribe(elevation_topic, 1, elevationCallback);
-    ROS_WARN("[Go2 kinematic sim] terrain_follow ON: z 跟随 %s (body_height=%.2f, dz<=%.2f m/s)",
-             elevation_topic.c_str(), body_height, max_dz_rate);
+    bool gt_ok = false;
+    if (terrain_source == "gt_file" && !gt_elev_file.empty())
+      gt_ok = loadGtElev(gt_elev_file);
+    if (gt_ok)
+    {
+      ROS_WARN("[Go2 kinematic sim] terrain_follow ON: z 跟随 GT 高程 %s "
+               "(body_height=%.2f, dz<=%.2f m/s)", gt_elev_file.c_str(), body_height, max_dz_rate);
+    }
+    else
+    {
+      if (terrain_source == "gt_file")
+        ROS_WARN("[Go2 kinematic sim] GT 高程不可用（未配置或载入失败），回退感知话题 %s",
+                 elevation_topic.c_str());
+      elevation_sub = node.subscribe(elevation_topic, 1, elevationCallback);
+      ROS_WARN("[Go2 kinematic sim] terrain_follow ON: z 跟随 %s (body_height=%.2f, dz<=%.2f m/s)",
+               elevation_topic.c_str(), body_height, max_dz_rate);
+    }
   }
 
   tf::TransformBroadcaster broadcaster;

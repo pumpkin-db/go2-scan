@@ -38,8 +38,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/ROOF_Diffuse</name>
                     </script>
                 </material>
@@ -81,8 +81,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/WALLS_Diffuse</name>
                     </script>
                 </material>
@@ -124,8 +124,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/PILLERS_Diffuse</name>
                     </script>
                 </material>
@@ -167,8 +167,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/FAN_Diffuse</name>
                     </script>
                 </material>
@@ -196,8 +196,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/WINDOW_Diffuse</name>
                     </script>
                 </material>
@@ -228,8 +228,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/INTERCOM_Diffuse</name>
                     </script>
                 </material>
@@ -259,8 +259,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/FireAlarm_Diffuse</name>
                     </script>
                 </material>
@@ -290,8 +290,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/FireAlarmPole</name>
                     </script>
                 </material>
@@ -321,8 +321,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/Pipes_Diffuse</name>
                     </script>
                 </material>
@@ -352,8 +352,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/STAIRS_Diffuse</name>
                     </script>
                 </material>
@@ -396,8 +396,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/BOXSET_Diffuse</name>
                     </script>
                 </material>
@@ -439,8 +439,8 @@
                     </pbr>
                     <!-- fallback to script if no PBR support-->
                     <script>
-                        <uri>materials/scripts/</uri>
-                        <uri>materials/textures/</uri>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
                         <name>UrbanTile/FLOOR_Diffuse</name>
                     </script>
                 </material>
@@ -476,6 +476,13 @@
                             <albedo_map>materials/textures/FanBack_FanBack_BaseColor.png</albedo_map>
                         </metal>
                     </pbr>
+                
+                    <!-- fallback to script if no PBR support (2026-08-27 补) -->
+                    <script>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
+                        <name>UrbanTile/FanBack_Diffuse</name>
+                    </script>
                 </material>
             </visual>
             <visual name="crates">
@@ -495,6 +502,13 @@
                             <roughness_map>materials/textures/Crates_Crates_Roughness.png</roughness_map>
                         </metal>
                     </pbr>
+                
+                    <!-- fallback to script if no PBR support (2026-08-27 补) -->
+                    <script>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
+                        <name>UrbanTile/Crates_Diffuse</name>
+                    </script>
                 </material>
             </visual>
         </link>
@@ -525,6 +539,13 @@
                             <light_map uv_set="1">materials/textures/DepotLightmap.png</light_map>
                         </metal>
                     </pbr>
+                
+                    <!-- fallback to script if no PBR support (2026-08-27 补) -->
+                    <script>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
+                        <name>UrbanTile/FAN_Diffuse</name>
+                    </script>
                 </material>
             </visual>
             <light type="point" name="fan_light">
@@ -567,6 +588,13 @@
                             <light_map uv_set="1">materials/textures/DepotLightmap.png</light_map>
                         </metal>
                     </pbr>
+                
+                    <!-- fallback to script if no PBR support (2026-08-27 补) -->
+                    <script>
+                        <uri>model://Depot/materials/scripts</uri>
+                        <uri>model://Depot/materials/textures</uri>
+                        <name>UrbanTile/FAN_Diffuse</name>
+                    </script>
                 </material>
             </visual>
             <light type="point" name="fan_light">

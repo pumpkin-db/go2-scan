@@ -9,10 +9,13 @@
 
   <arg name="world_file" default="$(env HOME)/claude/raicom/go2-scan/simulation/worlds/indoor_1.world"/>
   <arg name="navi_mode" default="1"/>
-  <!-- 全局决策层选择：tare（默认，行为与 2bf137d 基线完全一致）| ariadne。
-       ariadne 时 navi_mode 自动切 3（SCAN /initial_path 模式）、点云源切 _clean -->
+  <!-- 全局决策层选择：tare（默认）| ariadne | none。
+       none = 纯底盘+传感链（无全局决策核）：B 验收（terrain_follow 遥控上台阶）、
+       传感器链路调试、D 组件 climb_mode 单测的干净底座。FSM 由 navi_mode 直接
+       驱动（=1 等外部单点目标、=2 吃 scan_planner/tools/keypoint.yaml 预设航点），
+       无决策核发目标时狗静止等待遥控/预设航点。 -->
   <arg name="global_planner" default="tare"/>
-  <arg name="navi_mode_eff" value="$(eval '3' if global_planner != 'tare' else navi_mode)"/>
+  <arg name="navi_mode_eff" value="$(eval '3' if global_planner == 'ariadne' else navi_mode)"/>
   <!-- 2026-08-26 两分支统一吃近距过滤云（原 tare 分支直吃原云已作废）：
        velodyne 360° 下视射线含狗体自回波，tare 首跑实证 grid_map 起点被自占
        阻塞 → A* 全败（bspline_optimizer.cpp:146 "a star error" 刷屏）→
@@ -29,6 +32,10 @@
   <arg name="rviz" default="true"/>
   <!-- 地形跟随 z（楼梯/多层场景如 depot 开启；默认关保持 indoor_1 基线） -->
   <arg name="terrain_follow" default="false"/>
+  <!-- 高程数据源（2026-08-27）：仿真默认吃场景 GT 高程二进制（干净无天花板）；
+       实机/感知路线用 terrain_source:=elevation。gt_elev_file 由场景 env.sh 提供 -->
+  <arg name="terrain_source" default="gt_file"/>
+  <arg name="gt_elev_file" default=""/>
 
   <!-- 1. Gazebo 场景 -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
@@ -53,8 +60,15 @@
     <param name="publish_tf" value="true"/>
     <param name="init_yaw" value="$(arg init_yaw)"/>
     <param name="terrain_follow" value="$(arg terrain_follow)"/>
+    <param name="terrain_source" value="$(arg terrain_source)"/>
+    <param name="gt_elev_file" value="$(arg gt_elev_file)"/>
   </node>
-  <node pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
+  <!-- remote_drive:=true 时跳过闭环控制器：其无轨迹时以 100Hz 持续发零速 Twist
+       （closed_loop_controller.cpp:175 publishStop / :241 timer 0.01s），会把遥控/
+       stair_transit 直驱的 /cmd_vel 稀释（B 验收首跑实证：0.4m/s 指令被稀释至
+       ~0.014m/s，780s 仅走 11m）。遥控验收与爬楼直驱场景必须关闭本节点。 -->
+  <arg name="remote_drive" default="false"/>
+  <node unless="$(arg remote_drive)" pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
 
   <!-- 3. 桥：body_pose -> Gazebo set_model_state + sensor_pose -->
   <node pkg="go2_bridge" name="gazebo_bridge" type="gazebo_bridge.py" output="screen">
@@ -109,6 +123,20 @@
   <!-- 8. RViz（GPU 硬件渲染：WSL2 的 OpenGL 走 D3D12 直通 NVIDIA，无需软件渲染） -->
   <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default.rviz"/>
 
+  <!-- 8b. 实时评分显示（2026-08-27）：增量 ER/路径/用时 → /live_score 文本 Marker，
+       default.rviz 已加显示组。默认跟随 rviz 开关（无头跑分不起，零行为变化）。
+       口径与官方评估器同款（import 复用其可见性函数），终值以评估器报告为准。 -->
+  <arg name="live_score" default="$(arg rviz)"/>
+  <node if="$(arg live_score)" pkg="go2_bridge" name="live_score_rviz" type="live_score_rviz.py" output="screen"/>
+
+  <!-- 8c. 楼梯检测（方向④阶段C）：注册表兜底（橙箭头）+ 高程图几何检出（蓝箭头）。
+       Depot 场景 env.sh 里自动开（stair_detect:=true）；indoor 等不开。 -->
+  <arg name="stair_detect" default="false"/>
+  <arg name="stair_registry" default="$(env HOME)/claude/raicom/go2-scan/scenes/depot/scene.yaml"/>
+  <node if="$(arg stair_detect)" pkg="go2_bridge" name="stair_detector" type="stair_detector.py" output="screen">
+    <param name="registry" value="$(arg stair_registry)"/>
+  </node>
+
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策）
        cfg_dir 可被场景覆盖（Depot 等场景窗口中心与 indoor_1 不同） -->
   <arg name="cfg_dir" default="$(env HOME)/claude/raicom/go2-scan/simulation/elevation"/>
@@ -128,7 +156,7 @@
   <!-- 近距过滤两分支共用（2026-08-26 从 ariadne 组上提）：min_range 剔狗体自回波；
        max_range 分支差异化——ariadne=6 保 octomap「看不见=unknown」语义（效用全零
        根因修复，见 PROGRESS 2026-08-26）；tare=40 只滤近场，远场供建图/TARE 全量程输入。 -->
-  <arg name="planner_sensor_range" value="$(eval '6' if global_planner != 'tare' else '40')"/>
+  <arg name="planner_sensor_range" value="$(eval '6' if global_planner == 'ariadne' else '40')"/>
   <node pkg="go2_bridge" name="cloud_range_filter" type="cloud_range_filter.py" output="screen">
     <param name="min_range" value="0.7"/>
     <param name="max_range" value="$(arg planner_sensor_range)"/>
@@ -152,7 +180,7 @@
     <node pkg="go2_bridge" name="tare_goal_bridge" type="tare_goal_bridge.py" output="screen"/>
   </group>
 
-  <group unless="$(eval global_planner == 'tare')">
+  <group if="$(eval global_planner == 'ariadne')">
     <!-- ARiADNE 建图+决策链：sensorScanGeneration + map→world 恒等桥 + octomap_server +
          rl_planner（官方原版 py）。接线契约依据见包内 launch 注释。 -->
     <include file="$(find rl_planner)/launch/go2_ariadne.launch"/>

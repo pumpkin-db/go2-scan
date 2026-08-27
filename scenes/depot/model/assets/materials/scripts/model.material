@@ -168,3 +168,29 @@ material UrbanTile/FLOOR_Diffuse
       }
     }
   }
+material UrbanTile/Crates_Diffuse
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture Crates_Crates_BaseColor.png
+        }
+      }
+    }
+  }
+material UrbanTile/FanBack_Diffuse
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture FanBack_FanBack_BaseColor.png
+        }
+      }
+    }
+  }
