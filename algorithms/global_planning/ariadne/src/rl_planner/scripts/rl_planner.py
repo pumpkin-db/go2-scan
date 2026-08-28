@@ -55,6 +55,13 @@ class Runner:
         parameter.AVOID_OSCILLATION = rospy.get_param('~avoid_waypoint_oscillation', parameter.AVOID_OSCILLATION)
         parameter.ENABLE_SAVE_MODE = rospy.get_param('~enable_save_mode', parameter.ENABLE_SAVE_MODE)
         parameter.ENABLE_DSTARLITE = rospy.get_param('~enable_dstarlite', parameter.ENABLE_DSTARLITE)
+        self.enable_escape_recovery = rospy.get_param('~enable_escape_recovery', True)
+        self.escape_min_distance = rospy.get_param(
+            '~escape_min_distance', 2 * parameter.NODE_RESOLUTION)
+        self.escape_required_displacement = rospy.get_param(
+            '~escape_required_displacement', 3 * parameter.NODE_RESOLUTION)
+        self.escape_required_map_growth = rospy.get_param(
+            '~escape_required_map_growth', 20)
         frequency = rospy.get_param('~replanning_frequency', 2.5)
 
         # network model file
@@ -86,6 +93,12 @@ class Runner:
 
         # save mode
         self.save_mode = False
+        self.escape_mode = False
+        self.escape_arrived = False
+        self.escape_origin = None
+        self.escape_start_known_cells = 0
+        self.escape_excluded_nodes = set()
+        self.policy_blocked_nodes = set()
 
         # subscribers
         rospy.Subscriber('/projected_map', OccupancyGrid, self.get_map_callback, queue_size=1)
@@ -188,6 +201,23 @@ class Runner:
         if self.done:
              return
 
+        if self.escape_mode:
+            if np.linalg.norm(self.next_waypoint - self.robot_location) > parameter.THR_TO_WAYPOINT:
+                return
+            if self.next_waypoint_list:
+                next_waypoint = self.next_waypoint_list.pop(0)
+                while check_collision(self.robot_location, np.asarray(next_waypoint), self.map_info) is False \
+                        and np.linalg.norm(self.robot_location - np.asarray(next_waypoint)) < \
+                        (parameter.THR_NEXT_WAYPOINT + parameter.NODE_RESOLUTION) \
+                        and self.next_waypoint_list:
+                    next_waypoint = self.next_waypoint_list.pop(0)
+                self.next_waypoint = np.asarray(next_waypoint)
+                self.waypoint_pub.publish(self.waypoint_wrapper(self.next_waypoint))
+                return
+
+            self.escape_mode = False
+            self.escape_arrived = True
+
         if self.save_mode:
             if np.linalg.norm(self.next_waypoint - self.robot_location) > parameter.THR_TO_WAYPOINT:
                 return
@@ -249,6 +279,50 @@ class Runner:
         # updating planning graph
         self.robot.update_planning_state(self.map_info, robot_node_location)
 
+        if self.escape_arrived:
+            known_cells = int((self.map_info.map != parameter.UNKNOWN).sum())
+            map_growth = known_cells - self.escape_start_known_cells
+            displacement = np.linalg.norm(self.robot_location - self.escape_origin)
+            if map_growth >= self.escape_required_map_growth \
+                    and displacement >= self.escape_required_displacement:
+                self.escape_arrived = False
+                self.escape_origin = None
+                self.escape_excluded_nodes = set()
+                self.history_waypoint_list = []
+                rospy.logwarn(
+                    "Escape recovery completed: displacement=%.1fm, map_growth=%d; "
+                    "switch back to RL", displacement, map_growth)
+            else:
+                min_origin_distance = max(
+                    self.escape_required_displacement,
+                    displacement + parameter.NODE_RESOLUTION)
+                escape_path, escape_target, path_distance, frontier_distance = \
+                    self.robot.node_manager.find_escape_path(
+                        self.robot.location, self.escape_excluded_nodes,
+                        self.escape_min_distance, self.escape_origin,
+                        min_origin_distance)
+                if escape_path:
+                    self.escape_excluded_nodes.add(tuple(escape_target))
+                    self.next_waypoint_list = escape_path
+                    self.next_waypoint = np.asarray(self.next_waypoint_list.pop(0))
+                    self.escape_mode = True
+                    self.escape_arrived = False
+                    rospy.logwarn(
+                        "Continue escape recovery: target=(%.1f, %.1f), path=%.1fm, "
+                        "frontier_offset=%.1fm, displacement=%.1fm, map_growth=%d",
+                        escape_target[0], escape_target[1], path_distance,
+                        frontier_distance, displacement, map_growth)
+                    self.waypoint_pub.publish(self.waypoint_wrapper(self.next_waypoint))
+                    return
+
+                self.escape_arrived = False
+                self.escape_origin = None
+                self.escape_excluded_nodes = set()
+                self.history_waypoint_list = []
+                rospy.logwarn(
+                    "Escape recovery stopped: no farther frontier-backed node "
+                    "(displacement=%.1fm, map_growth=%d)", displacement, map_growth)
+
         # check the termination status
         if sum(self.robot.key_utility) == 0:
             # 停滞式完成判定（2026-08-25）：效用全零还不够，必须地图也静止满
@@ -276,7 +350,8 @@ class Runner:
         t3 = time.time()
 
         # network inference to get next waypoint
-        next_location, next_node_index = self.robot.select_next_waypoint(observation)
+        next_location, next_node_index = self.robot.select_next_waypoint(
+            observation, excluded_positions=self.policy_blocked_nodes)
 
         self.next_waypoint_list.append(next_location)
         if len(self.history_waypoint_list) > 0:
@@ -288,7 +363,8 @@ class Runner:
         # planning one more step if next node's utility is zero
         if self.robot.node_manager.nodes_dict.find(next_location.tolist()).data.utility == 0:
             next_observation = self.robot.get_next_observation(next_node_index, observation)
-            next_next_location, _ = self.robot.select_next_waypoint(next_observation)
+            next_next_location, _ = self.robot.select_next_waypoint(
+                next_observation, excluded_positions=self.policy_blocked_nodes)
 
             # if next waypoint is too close, go to the next next waypoint
             if np.linalg.norm(next_location - self.robot_location) < parameter.NODE_RESOLUTION:
@@ -308,6 +384,30 @@ class Runner:
                 self.next_waypoint_list = self.robot.node_manager.path_to_nearest_frontier
                 self.save_mode = True
                 rospy.logwarn("Switch to save mode")
+
+        if self.enable_escape_recovery and self.detect_waypoint_loop():
+            loop_nodes = set(self.history_waypoint_list[-6:])
+            self.policy_blocked_nodes.update(loop_nodes)
+            if len(self.policy_blocked_nodes) > 32:
+                self.policy_blocked_nodes = set(loop_nodes)
+            self.escape_origin = self.robot_location.copy()
+            self.escape_start_known_cells = int(
+                (self.map_info.map != parameter.UNKNOWN).sum())
+            self.escape_excluded_nodes = self.policy_blocked_nodes.copy()
+            escape_path, escape_target, path_distance, frontier_distance = \
+                self.robot.node_manager.find_escape_path(
+                    self.robot.location, self.escape_excluded_nodes,
+                    self.escape_min_distance, self.escape_origin,
+                    self.escape_min_distance)
+            if escape_path:
+                self.escape_excluded_nodes.add(tuple(escape_target))
+                self.next_waypoint_list = escape_path
+                self.escape_mode = True
+                rospy.logwarn(
+                    "Switch to escape recovery: target=(%.1f, %.1f), path=%.1fm, "
+                    "frontier_offset=%.1fm, steps=%d",
+                    escape_target[0], escape_target[1], path_distance,
+                    frontier_distance, len(escape_path))
 
         # get waypoint message
         self.next_waypoint = self.next_waypoint_list.pop(0)
@@ -350,6 +450,7 @@ class Runner:
                 return True
             else:
                 return False
+        return False
 
     def visualize_graph(self):
         # visualize edges

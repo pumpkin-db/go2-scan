@@ -236,10 +236,23 @@ class Agent:
         edge_padding_mask[0, 0, curren_in_edge] = 1
         return node_inputs, None, edge_mask, next_node_index, next_edge, edge_padding_mask
 
-    def select_next_waypoint(self, observation, greedy=True):
+    def select_next_waypoint(self, observation, greedy=True, excluded_positions=None):
         _, _, _, _, current_edge, _ = observation
         with torch.no_grad():
             logp = self.policy_net(*observation)
+
+        if excluded_positions:
+            excluded_positions = set(excluded_positions)
+            filtered_logp = logp.clone()
+            unblocked_actions = 0
+            for action_index, node_index in enumerate(current_edge[0, :, 0]):
+                coords = tuple(self.key_node_coords[node_index.item()])
+                if coords in excluded_positions:
+                    filtered_logp[0, action_index] = -float('inf')
+                elif torch.isfinite(logp[0, action_index]):
+                    unblocked_actions += 1
+            if unblocked_actions:
+                logp = filtered_logp
 
         if greedy:
             action_index = torch.argmax(logp, dim=1).long()

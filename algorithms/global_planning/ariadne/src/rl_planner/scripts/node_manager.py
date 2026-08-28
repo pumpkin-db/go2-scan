@@ -160,6 +160,37 @@ class NodeManager:
             self.removed_nodes.add(node)
             self.remove_node_from_dict(node)
 
+    def find_escape_path(self, robot_location, excluded_nodes, min_distance,
+                         escape_origin=None, min_origin_distance=0):
+        """Find a reachable non-local graph node that observes a real frontier."""
+        excluded_nodes = set(excluded_nodes)
+        candidates = []
+        for coords in self.key_node_dict:
+            if coords in excluded_nodes:
+                continue
+            node_entry = self.nodes_dict.find(coords)
+            if node_entry is None:
+                continue
+            node = node_entry.data
+            direct_distance = np.linalg.norm(node.coords - robot_location)
+            origin_distance = direct_distance if escape_origin is None else \
+                np.linalg.norm(node.coords - escape_origin)
+            if direct_distance < min_distance or origin_distance < min_origin_distance \
+                    or not node.observable_frontiers:
+                continue
+            candidates.append((-origin_distance, direct_distance, -node.utility, node))
+
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        for _, _, _, node in candidates:
+            path, path_distance = self.a_star(robot_location, node.coords)
+            if path_distance < 1e8 and path:
+                frontier_distance = min(
+                    np.linalg.norm(np.asarray(frontier) - node.coords)
+                    for frontier in node.observable_frontiers)
+                return path, node.coords, path_distance, frontier_distance
+
+        return None, None, 1e8, 1e8
+
     def get_rarefied_graph(self, robot_location, map_info):
         self.dist_to_nearest_frontier = 1e8
 
@@ -920,5 +951,3 @@ class DStarLite:
         if nodes_to_update:
             for node in nodes_to_update:
                 self.update_node(node)
-
-

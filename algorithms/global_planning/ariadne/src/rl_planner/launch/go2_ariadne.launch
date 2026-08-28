@@ -104,6 +104,10 @@
     <param name="frontier_cluster_range" value="10.0"/>
     <param name="enable_save_mode" value="false"/>
     <param name="enable_dstarlite" value="false"/>
+    <param name="enable_escape_recovery" value="true"/>
+    <param name="escape_min_distance" value="4.0"/>
+    <param name="escape_required_displacement" value="6.0"/>
+    <param name="escape_required_map_growth" value="20"/>
     <param name="replanning_frequency" value="2.5"/>
   </node>
 </launch>

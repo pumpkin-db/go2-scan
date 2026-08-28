@@ -896,3 +896,36 @@ terminate called after throwing 'std::length_error'
 - Depot 观测确认：action candidates 很多、utility 非零，greedy policy 偏向
   `(-12,-2)` 与 `(-10,-2)`；同时 projected_map known/free 长时间不变，地图停滞。
 - 下一步改为对照官方 ARiADNE 系统审计，暂不改参数、ModelPlugin 或点云链。
+
+### 2026-08-28：阶段性收尾（当前基线）
+
+- 分支 `debug/ariadne-baseline-20260828`，基线 commit `c33cedd`。
+- Gazebo ModelPlugin 阶段 A 基本跑通；旧 `go2_kinematic_sim → gazebo_bridge →
+  set_model_state` 运动链已关闭，Velodyne worldFrame 使用 `scan.world_pose()`。
+- `/mid360_points` 已确认是真 world 坐标；剩余毫米级误差属于 10 ms 离散相位抖动，暂不处理。
+- Depot 与 indoor_1 均观察到 ARiADNE 相邻 2m waypoint ping-pong；候选节点多、graph
+  connectivity 正常，policy 使用 greedy/argmax。官方 Save Mode 会触发但不能脱困。
+- `path_to_nearest_frontier` 实际是最近可达 `utility>0` graph node 的路径；frontier
+  遮挡检查存在，occupancy 正确时墙后 frontier 不会穿墙贡献。
+- 未解决：ARiADNE 局部 ping-pong/地图停滞；视觉腿未恢复；terrain-follow/body z 未迁入
+  ModelPlugin；楼梯状态机/楼层切换未实现；Depot 纹理白模未处理。
+- 下一步：先继续定位 ARiADNE ping-pong 的可恢复路径，再进入楼梯和腿。
+
+### 2026-08-28：ARiADNE ping-pong 根因审计与 escape recovery
+
+- 系统审计确认：当前核心网络、graph 代码和 checkpoint 与 indoor_1 99.6% / Depot
+  53.8% 基线一致。`UPDATING_MAP_SIZE=88m` 未随运行时 6m 量程重算，但官方 ROS fork
+  和历史好基线同样如此，保留其训练输入尺度，不作为本轮根因修复。
+- ping-pong 机制已实测闭环：机器人跨过相邻 2m 节点中点后 current node 切换；current
+  action 被 mask，greedy policy 在新 current 上以 0.70～0.9999 概率重新选择上一节点，
+  形成确定性 A↔B 环。官方 ROS checkpoint 对全零 guidepost 为既有契约；尝试恢复原版
+  `visited=1` 后循环仍存在且转移到其他节点，已撤回。
+- 决策归类为 **B：官方 policy 在部分局部图状态存在稳定循环，需要外部 recovery**。
+  新增 escape recovery：确认循环后屏蔽循环节点作为 RL 目标（仍允许作为图路径中间点），
+  选择距局部区域较远、A* 可达且确实关联真实 frontier 的 graph node，沿现有路径脱困；
+  达到地图增长和净位移门槛后恢复 RL。tabu 超过32节点时仅保留最新循环，防止无限增长。
+- 短测：Depot 120s 内连续打破两组局部环，航点推进到 y=6m 等新区域，known cells
+  约 1900→3793；indoor_1 同样完成 6.3m escape、地图增长1004格并继续推进到新区域。
+  Python 编译/静态检查通过，无临时调试日志残留。
+- 风险/下一步：尚未跑完整 ER；短测中 SCAN 偶发 A* error 但节点存活且后续继续规划。
+  下一步先跑 Depot/indoor_1 中时长回归确认覆盖率，再进入 terrain-follow/body z。
