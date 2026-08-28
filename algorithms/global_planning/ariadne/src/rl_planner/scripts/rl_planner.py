@@ -201,16 +201,34 @@ class Runner:
         self.robot = Agent(policy_net, self.device, self.publish_graph)
 
     def floor_reset_cb(self, _):
-        """切层 session 重置（P7）：图/目标/停滞状态清空，start 锚到当前位置。"""
+        """切层 session 重置（P7）：图/目标/停滞状态清空，start 按 boot 同款
+        逻辑（节点栅格对齐 + is_free）锚到当前位置，agent.location 一并锚回。"""
         try:
-            if self.robot_location is None:
+            if self.robot_location is None or self.map_info is None:
                 return
-            self.robot.node_manager = NodeManager(self.robot_location)
-            self.start = self.robot_location.copy()
+            rl = self.robot_location
+            x = np.array([(rl[0] // parameter.NODE_RESOLUTION) * parameter.NODE_RESOLUTION,
+                          (rl[0] // parameter.NODE_RESOLUTION + 1) * parameter.NODE_RESOLUTION])
+            y = np.array([(rl[1] // parameter.NODE_RESOLUTION) * parameter.NODE_RESOLUTION,
+                          (rl[1] // parameter.NODE_RESOLUTION + 1) * parameter.NODE_RESOLUTION])
+            t1, t2 = np.meshgrid(x, y)
+            cand = np.vstack([t1.T.ravel(), t2.T.ravel()]).T
+            dis = np.linalg.norm(cand - rl, axis=1)
+            start = None
+            for c in cand[np.argsort(dis)]:
+                if is_free(c, self.map_info):
+                    start = np.around(np.asarray(c), 1)
+                    break
+            if start is None:
+                start = np.around(rl, 1)
+            self.start = start
+            self.robot.node_manager = NodeManager(self.start)
+            self.robot.location = self.start.copy()
+            self.robot.robot_cell = get_cell_position_from_coords(self.start, self.map_info)
             self.done = False
             self.history_waypoint_list = []
             self.next_waypoint_list = []
-            self.next_waypoint = self.robot_location.copy()
+            self.next_waypoint = self.start.copy()
             self._last_map_signature = None
             self._last_map_change_time = time.time()
             self.save_mode = False
@@ -218,7 +236,7 @@ class Runner:
             self._stop_state['reason'] = None
             self._done_reason = ''
             rospy.logwarn('[rl_planner] FLOOR_RESET: new session at (%.1f, %.1f)',
-                          self.robot_location[0], self.robot_location[1])
+                          self.start[0], self.start[1])
         except Exception as e:
             rospy.logerr('[rl_planner] floor_reset failed: %s', e)
 
