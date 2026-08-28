@@ -164,12 +164,9 @@ class StairMissionManager(object):
                 if s > self.last_progress_s + 0.15:
                     self.last_progress_s = s
                     self.last_progress_t = time.time()
-                    if self.fallback:
-                        self.fallback = False
-                        rospy.logwarn('[stair_mission] progress resumed s=%.2f, fallback OFF', s)
                 elif time.time() - self.last_progress_t > self.stall_t and not self.fallback:
-                    rospy.logwarn('[stair_mission] stalled %.0fs s=%.2f → forward fallback ON',
-                                  time.time() - self.last_progress_t, s)
+                    rospy.logwarn('[stair_mission] stalled %.0fs s=%.2f → forward fallback ON '
+                                  '(stays on until EXIT)', time.time() - self.last_progress_t, s)
                     self.fallback = True
                 if (self.state == 'TRAVERSE_STAIR'
                         and s >= self.s_exit + self.exit_margin

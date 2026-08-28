@@ -247,14 +247,17 @@ private:
     y_ += vy_world * dt;
     yaw_ = std::atan2(std::sin(yaw_ + wz * dt), std::cos(yaw_ + wz * dt));
 
-    // 地形跟随：committed 期间跟注册表楼梯几何 z 剖面（绕开 2.5D GT 楼梯歧义），
-    // 否则跟 GT 高程图（indoor_1 默认关闭，行为不变）
+    // 地形跟随：committed 期间跟注册表楼梯几何 z 剖面（绕开 2.5D GT 楼梯歧义，
+    // 且不受 jump-clamp 限制——几何剖面是权威，只保留速率限制）；
+    // 非 committed 跟 GT 高程图（indoor_1 默认关闭，行为不变）
     double h = std::numeric_limits<double>::quiet_NaN();
+    bool geometric = false;
     if (stair_lock_ && zprof_valid_)
     {
       const double s_now = x_ * stair_dx_ + y_ * stair_dy_;
       const double f = Clamp(s_now / zprof_s_exit_, 0.0, 1.0);
       h = zprof_entry_z_ + (zprof_exit_z_ - zprof_entry_z_) * f;
+      geometric = true;
     }
     else if (terrain_follow_)
     {
@@ -263,10 +266,14 @@ private:
     if (!std::isnan(h))
     {
       const double z_target = h + body_clearance_;
-      if (std::fabs(z_target - z_) <= follow_max_jump_)
+      const double dz = z_target - z_;
+      const double dz_max = max_dz_rate_ * dt;
+      if (geometric)
       {
-        const double dz = z_target - z_;
-        const double dz_max = max_dz_rate_ * dt;
+        z_ += Clamp(dz, -dz_max, dz_max);
+      }
+      else if (std::fabs(dz) <= follow_max_jump_)
+      {
         z_ += Clamp(dz, -dz_max, dz_max);
       }
     }
