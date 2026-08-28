@@ -182,5 +182,8 @@
     <node pkg="go2_bridge" name="ariadne_goal_bridge" type="ariadne_goal_bridge.py" output="screen">
       <param name="repub_dist" value="1.0"/>
     </node>
+    <!-- 楼梯任务状态机（P5，2026-08-28）：EXPLORE→APPROACH→COMMIT→TRAVERSE→EXIT→SWITCH_FLOOR。
+         经 /nav_source 门控 bridge，保证单一有效控制源；随场景 stair_detect 启用。 -->
+    <node if="$(arg stair_detect)" pkg="go2_bridge" name="stair_mission_manager" type="stair_mission_manager.py" output="screen"/>
   </group>
 </launch>

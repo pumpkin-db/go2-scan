@@ -50,7 +50,7 @@
 
   <!-- octomap_server：apt 二进制。tf::MessageFilter 门控——点云在其 stamp
        时刻必须能 TF 到 map，否则被扣住（表现为地图空/滞后）。 -->
-  <node pkg="octomap_server" type="octomap_server_node" name="octomap" output="screen">
+  <node pkg="octomap_server" type="octomap_server_node" name="octomap" output="screen" respawn="true">
     <remap from="cloud_in" to="/sensor_scan"/>
     <param name="frame_id" value="map"/>
     <!-- 地面过滤（幻影墙根治，2026-08-24）：我们的场景有无限大 ground_plane，官方场景没有——

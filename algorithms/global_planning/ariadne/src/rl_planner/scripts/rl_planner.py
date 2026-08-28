@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import os
 import time
-from std_msgs.msg import Float32, Header
+from std_msgs.msg import Empty, Float32, Header
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Point, PointStamped
@@ -102,6 +102,8 @@ class Runner:
         # STOP_REASON 诊断（2026-08-28，纯日志不改变行为）
         self._stop_state = {'reason': None, 't': 0.0}
         self._done_reason = ''
+        # 切层 session 重置（P7，2026-08-28）：stair_mission_manager 广播
+        rospy.Subscriber('/floor_reset', Empty, self.floor_reset_cb, queue_size=1)
 
         # subscribers
         rospy.Subscriber('/projected_map', OccupancyGrid, self.get_map_callback, queue_size=1)
@@ -197,6 +199,28 @@ class Runner:
         policy_net.load_state_dict(torch.load(model_file, map_location=self.device)['policy_model'])
 
         self.robot = Agent(policy_net, self.device, self.publish_graph)
+
+    def floor_reset_cb(self, _):
+        """切层 session 重置（P7）：图/目标/停滞状态清空，start 锚到当前位置。"""
+        try:
+            if self.robot_location is None:
+                return
+            self.robot.node_manager = NodeManager(self.robot_location)
+            self.start = self.robot_location.copy()
+            self.done = False
+            self.history_waypoint_list = []
+            self.next_waypoint_list = []
+            self.next_waypoint = self.robot_location.copy()
+            self._last_map_signature = None
+            self._last_map_change_time = time.time()
+            self.save_mode = False
+            self.policy_blocked_nodes = set()
+            self._stop_state['reason'] = None
+            self._done_reason = ''
+            rospy.logwarn('[rl_planner] FLOOR_RESET: new session at (%.1f, %.1f)',
+                          self.robot_location[0], self.robot_location[1])
+        except Exception as e:
+            rospy.logerr('[rl_planner] floor_reset failed: %s', e)
 
     def _log_stop(self, reason, robot_node_location=None):
         """STOP_REASON 诊断：ARiADNE 本拍不发布航点时记录原因与决策上下文。
