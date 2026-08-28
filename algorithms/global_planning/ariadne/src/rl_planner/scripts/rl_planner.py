@@ -235,6 +235,10 @@ class Runner:
             self.policy_blocked_nodes = set()
             self._stop_state['reason'] = None
             self._done_reason = ''
+            # 切层宽限：octomap 重启后地图从空积累，utility 必然短暂全零；
+            # e438 立即完成语义会在首个零效用 tick 永久 done。给 30s 宽限
+            # （复用停滞完成机制：零效用+地图静止满 30s 才算完成）。
+            self.stalled_complete_seconds = 30.0
             rospy.logwarn('[rl_planner] FLOOR_RESET: new session at (%.1f, %.1f)',
                           self.start[0], self.start[1])
         except Exception as e:
