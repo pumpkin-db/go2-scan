@@ -43,6 +43,7 @@ class StairMissionManager(object):
         self.last_progress_s = None
         self.last_progress_t = None
         self.state_t = time.time()
+        self.last_traverse_send = 0.0
 
         self.detect_radius = rospy.get_param('~detect_radius', 6.0)
         self.approach_dist = rospy.get_param('~approach_dist', 1.5)
@@ -144,35 +145,43 @@ class StairMissionManager(object):
                 self.last_progress_s = self.s_of(pos)
                 self.last_progress_t = time.time()
                 self.send_traverse()
-        elif self.state == 'COMMIT_STAIR':
+                self.last_traverse_send = time.time()
+        elif self.state in ('COMMIT_STAIR', 'TRAVERSE_STAIR', 'EXIT_STAIR'):
+            # SCAN respawn/断连兜底：stair 态周期重发 traverse 路径（与 bridge 5s 重发同型）
+            if time.time() - self.last_traverse_send > 5.0:
+                self.send_traverse()
+                self.last_traverse_send = time.time()
             s = self.s_of(pos)
-            if s >= 0.2:
-                rospy.logwarn('[stair_mission] COMMIT->TRAVERSE s=%.2f', s)
-                self.set_state('TRAVERSE_STAIR')
-                self.last_progress_s = s
-                self.last_progress_t = time.time()
-        elif self.state == 'TRAVERSE_STAIR':
-            s = self.s_of(pos)
-            if s > self.last_progress_s + 0.15:
-                self.last_progress_s = s
-                self.last_progress_t = time.time()
-                if self.fallback:
+            if self.state == 'COMMIT_STAIR':
+                if s >= 0.2 or time.time() - self.state_t > 2.0:
+                    rospy.logwarn('[stair_mission] COMMIT->TRAVERSE s=%.2f', s)
+                    self.set_state('TRAVERSE_STAIR')
+                    if self.last_progress_s is None:
+                        self.last_progress_s = s
+                    if self.last_progress_t is None:
+                        self.last_progress_t = time.time()
+            else:
+                if s > self.last_progress_s + 0.15:
+                    self.last_progress_s = s
+                    self.last_progress_t = time.time()
+                    if self.fallback:
+                        self.fallback = False
+                        rospy.logwarn('[stair_mission] progress resumed s=%.2f, fallback OFF', s)
+                elif time.time() - self.last_progress_t > self.stall_t and not self.fallback:
+                    rospy.logwarn('[stair_mission] stalled %.0fs s=%.2f → forward fallback ON',
+                                  time.time() - self.last_progress_t, s)
+                    self.fallback = True
+                if (self.state == 'TRAVERSE_STAIR'
+                        and s >= self.s_exit + self.exit_margin
+                        and pos[2] >= self.floor1_z + 0.1):
+                    rospy.logwarn('[stair_mission] TRAVERSE->EXIT s=%.2f z=%.2f', s, pos[2])
+                    self.set_state('EXIT_STAIR')
+                    self.lock_pub.publish(Bool(data=False))
                     self.fallback = False
-                    rospy.logwarn('[stair_mission] progress resumed s=%.2f, fallback OFF', s)
-            elif time.time() - self.last_progress_t > self.stall_t and not self.fallback:
-                rospy.logwarn('[stair_mission] stalled %.0fs s=%.2f → forward fallback ON',
-                              time.time() - self.last_progress_t, s)
-                self.fallback = True
-            if s >= self.s_exit + self.exit_margin and pos[2] >= self.floor1_z + 0.1:
-                rospy.logwarn('[stair_mission] TRAVERSE->EXIT s=%.2f z=%.2f', s, pos[2])
-                self.set_state('EXIT_STAIR')
-                self.lock_pub.publish(Bool(data=False))
-                self.fallback = False
-        elif self.state == 'EXIT_STAIR':
-            if time.time() - self.state_t > 3.0:
-                rospy.logwarn('[stair_mission] EXIT->SWITCH_FLOOR')
-                self.set_state('SWITCH_FLOOR')
-                self.do_floor_switch()
+                if (self.state == 'EXIT_STAIR' and time.time() - self.state_t > 3.0):
+                    rospy.logwarn('[stair_mission] EXIT->SWITCH_FLOOR')
+                    self.set_state('SWITCH_FLOOR')
+                    self.do_floor_switch()
         elif self.state == 'SWITCH_FLOOR':
             if time.time() - self.state_t > 20.0:
                 self.floor += 1
