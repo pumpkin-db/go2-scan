@@ -4,6 +4,38 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-28（下午）：Depot 自主上楼全链验收成功 ✅（feature/depot-stair-autonomy-20260828）
+
+**5h 无人值守任务达成主目标**：`Depot 一层自主探索 → 自动发现楼梯 → 自主接近 → COMMIT →
+完整向上通过 → 二层继续 ARiADNE 探索`，验收报告 `ariadne_depot_20260828_161243.md`
+（ER 47.8% @1337s，degraded=False，轨迹 286.9m —— 一层天花板≈48-50%，二层图已开始贡献）。
+
+**验收链证据（p8_mission.csv + p8_body.csv，run 161243）**：
+- EXPLORE（ARiADNE 自主探索一层，registry 楼梯始终在 /stairs_detected）
+- EXPLORE→APPROACH_STAIR dist=6.00（自动触发，未人工干预）
+- APPROACH→COMMIT dist=0.74（发布方向+几何 z 剖面+单调锁，traverse 6 点路径）
+- COMMIT→TRAVERSE（z 0.69→1.44→2.95 连续爬升，无瞬移；中途 12s 停滞→前向 fallback
+  ON 兜底，s 单调不回退——插件位置级 clamp 数学保证）
+- TRAVERSE→EXIT s=5.97 z=2.99（已过 exit+margin）
+- EXIT→SWITCH_FLOOR：octomap 占据带切 [3.0,3.8] + rosnode kill（respawn 重启）+
+  /floor_reset；SWITCH_FLOOR→EXPLORE floor=1
+- **二层 EXPLORE**：心跳位置连续变化（(9.3,−3.8)→(4.0,−2.8)…z=2.99 恒定）、
+  switch 后 443 条 /initial_path、二层累计移动 222.9m ✓
+
+**实现（本分支 8 个 commit，7d55791→32b52db→7b0a575 等）**：
+- ModelPlugin：GT 地形跟随（z 限速+跳变限幅，indoor_1 默认关）+ committed 单调锁
+  （速度负向分量剔除+位置级 s 只增）+ committed 几何 z 剖面（绕开 2.5D GT 楼梯歧义——
+  楼梯下方格报地面高，跟 GT 会在中段掉 z）+ 锁初始化延迟一 tick（跨话题顺序 bug 曾致 16.6m 瞬移）
+- stair_mission_manager（新节点）：七态状态机 + /nav_source 门控 + 100Hz 前向 fallback
+- ariadne_goal_bridge：/nav_source 门控 + 5s 周期重发（修 Bug A respawn 饿死）+ /floor_reset
+- rl_planner：/floor_reset 新 session（节点栅格对齐 start + is_free + agent.location 锚回 +
+  30s 完成宽限——空 octomap 首个零效用 tick 曾致立即 done 永久死亡）
+- go2_ariadne.launch：octomap_server respawn=true；gazebo_sim.launch：terrain 参数接线 + manager 挂载
+
+**遗留（按任务 §17 backlog）**：腿 fixed（主线成功后做视觉步态）；Depot 纹理白模；
+astar=1220（爬楼段 SCAN 频繁失败，由 fallback 兜底——后续可优化 traverse 路径/占据）；
+obst=2（瞬态自愈）；诊断 bspline 时间线缺 header 字段。git 已 push。
+
 ## 2026-08-28：fatal 未复现 + 逐 replan 监测落地（ZCode 执行）
 
 - **结论：073402 报告的 fatal（436s 起点判障碍急停）在干净重建二进制上未复现**。
