@@ -58,6 +58,10 @@
   <param name="init_x" value="$(arg init_x)" type="double"/>
   <param name="init_y" value="$(arg init_y)" type="double"/>
   <param name="init_z" value="$(arg init_z)" type="double"/>
+  <!-- 地形跟随（2026-08-28 P3）：场景经 env.sh 附加 terrain_follow:=true + gt_elev_file，
+       ModelPlugin 从全局 param 读取；indoor_1 不设 → false，基线行为不变。 -->
+  <param name="terrain_follow" value="$(arg terrain_follow)" type="bool"/>
+  <param name="gt_elev_file" value="$(arg gt_elev_file)" type="str"/>
   <!-- remote_drive:=true 时跳过闭环控制器：其无轨迹时以 100Hz 持续发零速 Twist
        （closed_loop_controller.cpp:175 publishStop / :241 timer 0.01s），会把遥控/
        stair_transit 直驱的 /cmd_vel 稀释（B 验收首跑实证：0.4m/s 指令被稀释至
