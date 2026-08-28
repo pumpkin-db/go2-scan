@@ -61,6 +61,7 @@ class StairMissionManager(object):
         self.nav_source_pub = rospy.Publisher('/nav_source', String, queue_size=2, latch=True)
         self.lock_pub = rospy.Publisher('/stair_traverse_lock', Bool, queue_size=2)
         self.dir_pub = rospy.Publisher('/stair_traverse_dir', Vector3, queue_size=2)
+        self.zprof_pub = rospy.Publisher('/stair_traverse_zprof', Vector3, queue_size=2)
         self.floor_reset_pub = rospy.Publisher('/floor_reset', Empty, queue_size=2)
         self.cmd_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=2)
         self.nav_source_pub.publish('ariadne')
@@ -132,15 +133,24 @@ class StairMissionManager(object):
                     rospy.logwarn('[stair_mission] approach: (%.2f,%.2f)→entry (%.2f,%.2f)', ax, ay, e[0], e[1])
         elif self.state == 'APPROACH_STAIR':
             e = self.stair['entry']
+            x = self.stair['exit']
             dist = math.hypot(pos[0] - e[0], pos[1] - e[1])
             if dist < self.commit_dist:
                 rospy.logwarn('[stair_mission] APPROACH->COMMIT dist=%.2f', dist)
                 self.set_state('COMMIT_STAIR')
                 self.dir_pub.publish(Vector3(x=self.d[0], y=self.d[1], z=0.0))
+                self.zprof_pub.publish(Vector3(x=e[2], y=x[2], z=self.s_exit))
                 self.lock_pub.publish(Bool(data=True))
                 self.last_progress_s = self.s_of(pos)
                 self.last_progress_t = time.time()
                 self.send_traverse()
+        elif self.state == 'COMMIT_STAIR':
+            s = self.s_of(pos)
+            if s >= 0.2:
+                rospy.logwarn('[stair_mission] COMMIT->TRAVERSE s=%.2f', s)
+                self.set_state('TRAVERSE_STAIR')
+                self.last_progress_s = s
+                self.last_progress_t = time.time()
         elif self.state == 'TRAVERSE_STAIR':
             s = self.s_of(pos)
             if s > self.last_progress_s + 0.15:

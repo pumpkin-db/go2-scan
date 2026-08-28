@@ -69,6 +69,9 @@ public:
     // 楼梯 committed 单调锁（P6）：stair_mission_manager 发布
     lock_sub_ = nh_->subscribe("/stair_traverse_lock", 2, &Go2KinematicModelPlugin::OnLock, this);
     dir_sub_ = nh_->subscribe("/stair_traverse_dir", 2, &Go2KinematicModelPlugin::OnDir, this);
+    // committed 期间 z 剖面（P3b）：2.5D GT 在楼梯区有多层歧义（下层报地面高），
+    // 改跟注册表楼梯几何：z_target = entry_z + (exit_z-entry_z)*s/s_exit + clearance
+    zprof_sub_ = nh_->subscribe("/stair_traverse_zprof", 2, &Go2KinematicModelPlugin::OnZProf, this);
 
     const auto pose = model_->WorldPose();
     x_ = pose.Pos().X();
@@ -122,6 +125,14 @@ private:
       stair_dx_ = msg->x / n;
       stair_dy_ = msg->y / n;
     }
+  }
+
+  void OnZProf(const geometry_msgs::Vector3ConstPtr &msg)
+  {
+    zprof_entry_z_ = msg->x;
+    zprof_exit_z_ = msg->y;
+    zprof_s_exit_ = std::max(0.3, msg->z);
+    zprof_valid_ = true;
   }
 
   // ---- GT 地形跟随（自 go2_kinematic_sim.cpp 原样迁移）----
@@ -236,19 +247,27 @@ private:
     y_ += vy_world * dt;
     yaw_ = std::atan2(std::sin(yaw_ + wz * dt), std::cos(yaw_ + wz * dt));
 
-    // 地形跟随：z 限速趋近 h(x,y)+clearance（indoor_1 默认关闭，行为不变）
-    if (terrain_follow_)
+    // 地形跟随：committed 期间跟注册表楼梯几何 z 剖面（绕开 2.5D GT 楼梯歧义），
+    // 否则跟 GT 高程图（indoor_1 默认关闭，行为不变）
+    double h = std::numeric_limits<double>::quiet_NaN();
+    if (stair_lock_ && zprof_valid_)
     {
-      const double h = SampleGtElev(x_, y_);
-      if (!std::isnan(h))
+      const double s_now = x_ * stair_dx_ + y_ * stair_dy_;
+      const double f = Clamp(s_now / zprof_s_exit_, 0.0, 1.0);
+      h = zprof_entry_z_ + (zprof_exit_z_ - zprof_entry_z_) * f;
+    }
+    else if (terrain_follow_)
+    {
+      h = SampleGtElev(x_, y_);
+    }
+    if (!std::isnan(h))
+    {
+      const double z_target = h + body_clearance_;
+      if (std::fabs(z_target - z_) <= follow_max_jump_)
       {
-        const double z_target = h + body_clearance_;
-        if (std::fabs(z_target - z_) <= follow_max_jump_)
-        {
-          const double dz = z_target - z_;
-          const double dz_max = max_dz_rate_ * dt;
-          z_ += Clamp(dz, -dz_max, dz_max);
-        }
+        const double dz = z_target - z_;
+        const double dz_max = max_dz_rate_ * dt;
+        z_ += Clamp(dz, -dz_max, dz_max);
       }
     }
 
@@ -310,7 +329,7 @@ private:
   physics::WorldPtr world_;
   event::ConnectionPtr update_connection_;
   std::unique_ptr<ros::NodeHandle> nh_;
-  ros::Subscriber cmd_sub_, lock_sub_, dir_sub_;
+  ros::Subscriber cmd_sub_, lock_sub_, dir_sub_, zprof_sub_;
   ros::Publisher body_pub_, lidar_pub_;
   tf::TransformBroadcaster tf_broadcaster_;
   std::mutex cmd_mutex_;
@@ -329,6 +348,10 @@ private:
   // 楼梯 committed 单调锁
   bool stair_lock_ = false;
   double stair_dx_ = 1.0, stair_dy_ = 0.0, s_prev_ = 0.0;
+
+  // committed 几何 z 剖面
+  bool zprof_valid_ = false;
+  double zprof_entry_z_ = 0.0, zprof_exit_z_ = 0.0, zprof_s_exit_ = 2.8;
 };
 
 GZ_REGISTER_MODEL_PLUGIN(Go2KinematicModelPlugin)
