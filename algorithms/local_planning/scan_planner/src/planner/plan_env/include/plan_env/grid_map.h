@@ -110,6 +110,8 @@ struct MappingData {
   Eigen::Vector3d ray_pos_;
   Eigen::Quaterniond ray_q_;
   Eigen::Vector3d sliding_map_frame_pos_;
+  ros::Time last_ray_pose_stamp_;   // header stamp of latest /grid_map/sensor_pose
+  ros::Time last_cloud_stamp_;      // header stamp of latest /grid_map/cloud
 
   // depth image data
 
@@ -193,6 +195,15 @@ public:
   inline double getResolution();
   Eigen::Vector3d getOrigin();
   int getVoxelNum();
+
+  /* diagnostics (read-only views of latest sensor inputs) */
+  inline Eigen::Vector3d getRayPos() const { return md_.ray_pos_; }
+  inline ros::Time getLastRayPoseStamp() const { return md_.last_ray_pose_stamp_; }
+  inline ros::Time getLastCloudStamp() const { return md_.last_cloud_stamp_; }
+  inline Eigen::Vector3d getMapMinBoundary() const { return mp_.map_min_boundary_; }
+  inline Eigen::Vector3d getMapMaxBoundary() const { return mp_.map_max_boundary_; }
+  inline double getDoubleCylinderOffset() const { return mp_.double_cylinder_offset_; }
+  inline double getDoubleCylinderRadius() const { return mp_.double_cylinder_radius_; }
 
   typedef std::shared_ptr<GridMap> Ptr;
 

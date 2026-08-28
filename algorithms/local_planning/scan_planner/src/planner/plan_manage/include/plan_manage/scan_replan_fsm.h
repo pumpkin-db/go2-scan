@@ -87,6 +87,16 @@ namespace scan_planner
 
     bool flag_escape_emergency_;
 
+    /* diagnostics for fatal-failure forensics */
+    ros::Publisher diag_snapshot_pub_;
+    ros::Time last_initial_path_rx_time_;                  // last /initial_path arrival (ros::Time::now())
+    ros::Time last_initial_path_stamp_;                    // its header stamp
+    std::vector<Eigen::Vector3d> last_initial_path_pts_;   // raw poses (before +body_height)
+    ros::Time odom_stamp_;
+    int diag_snapshot_count_{0};
+    bool diag_map_warmed_{false};
+    bool diag_anomaly_logged_{false};
+
     /* ROS utils */
     ros::NodeHandle node_;
     ros::Timer exec_timer_, safety_timer_;
@@ -115,6 +125,8 @@ namespace scan_planner
     double getOdomYaw() const;
     double estimateYawFromSegment(const Eigen::Vector3d &from, const Eigen::Vector3d &to) const;
     void updateLocalTrajTimeFreeze();
+    void dumpDiagSnapshot(const std::string &reason);
+    void logReplanDiag();
 
     /* ROS functions */
     void execFSMCallback(const ros::TimerEvent &e);

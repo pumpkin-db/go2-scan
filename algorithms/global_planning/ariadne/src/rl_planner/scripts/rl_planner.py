@@ -99,6 +99,9 @@ class Runner:
         self.escape_start_known_cells = 0
         self.escape_excluded_nodes = set()
         self.policy_blocked_nodes = set()
+        # STOP_REASON 诊断（2026-08-28，纯日志不改变行为）
+        self._stop_state = {'reason': None, 't': 0.0}
+        self._done_reason = ''
 
         # subscribers
         rospy.Subscriber('/projected_map', OccupancyGrid, self.get_map_callback, queue_size=1)
@@ -195,14 +198,47 @@ class Runner:
 
         self.robot = Agent(policy_net, self.device, self.publish_graph)
 
+    def _log_stop(self, reason, robot_node_location=None):
+        """STOP_REASON 诊断：ARiADNE 本拍不发布航点时记录原因与决策上下文。
+        同原因 5s 节流；换原因立即记。纯日志，不改变任何控制流。"""
+        now = time.time()
+        if reason == self._stop_state['reason'] and now - self._stop_state['t'] < 5.0:
+            return
+        self._stop_state['reason'] = reason
+        self._stop_state['t'] = now
+        util_pos = -1
+        valid = -1
+        try:
+            util_pos = int(sum(1 for u in self.robot.key_utility if u > 0))
+        except Exception:
+            pass
+        try:
+            if robot_node_location is not None:
+                entry = self.robot.node_manager.nodes_dict.find(list(robot_node_location))
+                if entry is not None:
+                    valid = len(getattr(entry.data, 'neighbor_set', set()) or set())
+        except Exception:
+            valid = -2
+        try:
+            rospy.loginfo(
+                "STOP_REASON=%s util_pos=%d valid_actions=%d blocked=%d "
+                "stalled=%.1fs stall_done=%s escape_mode=%s escape_arrived=%s excluded=%d",
+                reason, util_pos, valid, len(self.policy_blocked_nodes),
+                now - self._last_map_change_time, self._done_reason,
+                self.escape_mode, self.escape_arrived, len(self.escape_excluded_nodes))
+        except Exception:
+            pass
+
     def run(self, event=None):
         # no more planning if exploration is completed
         t1 = time.time()
         if self.done:
+             self._log_stop('done_' + (self._done_reason or 'unknown'))
              return
 
         if self.escape_mode:
             if np.linalg.norm(self.next_waypoint - self.robot_location) > parameter.THR_TO_WAYPOINT:
+                self._log_stop('escape_walking')
                 return
             if self.next_waypoint_list:
                 next_waypoint = self.next_waypoint_list.pop(0)
@@ -220,6 +256,7 @@ class Runner:
 
         if self.save_mode:
             if np.linalg.norm(self.next_waypoint - self.robot_location) > parameter.THR_TO_WAYPOINT:
+                self._log_stop('save_mode')
                 return
             else:
                 if len(self.next_waypoint_list) > 0:
@@ -249,6 +286,7 @@ class Runner:
             if self.history_waypoint_list[-1] == self.history_waypoint_list[-3] and self.history_waypoint_list[-2] == self.history_waypoint_list[-4]:
                 self.next_waypoint_list = []
                 if np.linalg.norm(self.next_waypoint - self.robot_location) > parameter.THR_TO_WAYPOINT:
+                    self._log_stop('oscillation_break')
                     return
 
         # if planned one more step, use it
@@ -330,14 +368,14 @@ class Runner:
             # 等地图更新后前沿自然重现。
             stalled_seconds = time.time() - self._last_map_change_time
             if stalled_seconds < self.stalled_complete_seconds:
-                rospy.loginfo_throttle(
-                    10, f"utility all-zero but map growing ({stalled_seconds:.1f}s quiet), "
-                    "not completing yet")
+                self._log_stop('utility_zero_waiting_map_growth', robot_node_location)
                 return
 
             g = "\033[92m"
             n= "\033[0m"
             rospy.loginfo(f"{g}Exploration Completed{n}")
+            self._done_reason = 'stalled_complete' if self.stalled_complete_seconds > 0 else 'utility_zero_immediate'
+            self._log_stop('exploration_completed')
             self.done = True
             run_time = Float32()
             run_time.data = 0
@@ -420,6 +458,7 @@ class Runner:
         # publish
         self.run_time_pub.publish(run_time)
         self.waypoint_pub.publish(waypoint_msg)
+        self._stop_state['reason'] = None  # 恢复发布：下一次停止立即记录
 
         self.step += 1
         if self.publish_graph:

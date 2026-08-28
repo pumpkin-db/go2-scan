@@ -4,6 +4,61 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-28：fatal 未复现 + 逐 replan 监测落地（ZCode 执行）
+
+- **结论：073402 报告的 fatal（436s 起点判障碍急停）在干净重建二进制上未复现**。
+  监测跑 1201s（mission），ER 29.6% / 轨迹 92.6m，判废原因=平台期 166s（新故障形态，非 drone-in-obstacle）。
+  `obst=0`、78 次 a-star error 全部自愈、escape recovery 6 次均成功、SCAN 全程存活（PID 零变化）。
+- **逐 replan 监测（SCAN_RDIAG，161 次）**：start_pt 与前 3 控制点在 replan 入口处始终 in-map 且 free
+  → “起点滑出 10×10 滑窗 / 被判占据”（分类 C/D）在 replan 入口未发生；a-star 失败源于**轨迹中段**
+  碰撞段（当前监测盲区，[SCAN_DIAG-OPT] 埋点未触发）。滑窗越界假设未被证实。
+- **e438e07 静态对比**：GridMap 全部参数与滑窗/out-of-map 语义完全一致 → 排除地图层回归。
+- **诊断埋点（未提交，工作区改动）**：FSM `dumpDiagSnapshot`（EMERGENCY_STOP/失败计数触发，
+  发布 /scan_diag/snapshot）+ optimizer 两失败点控制点占据倾倒（[SCAN_DIAG-OPT]）+
+  grid_map 时戳 getter + `tools/diag_snapshot_node.py`（rosout 直达 + JSON/PCD 落盘 /tmp/go2_diag）。
+- **事故复盘**：① UNC 编辑+增量编译 mtime 陷阱 → bspline_optimizer.cpp 静默未重编 + Eigen 二义性
+  编译错误从未暴露 → 新旧 .o 混链 → exit -11 循环；全量重编+修复后消除。
+  ② logReplanDiag 对未初始化轨迹调 evaluateDeBoorT 段错误，已加 has_traj 守卫。
+  ③ WSL 互通守则沉淀至 ZCode 工作区 `ZCODE_RUNBOOK.md`（不入库）。
+- **新挂账**：respawn=true + bridge 去重门（repub_dist=1.0）→ 节点重启后 FSM 可能永久等不到重发
+  航点（解释 093831 基线跑轨迹 0.0m）；roslaunch stdout 块缓冲会吞错误行，观测必须走 rosout/PID。
+- 待办：fatal 复现性实验（同场景多跑 + 确认 073402 当时实际运行的二进制）；中段碰撞段监测扩展。
+- **系统全盘对比（e438e07 vs 当前）→ ER 98.6%→29.6% 根因聚焦**：
+  - 完全一致（排除）：checkpoint.pth、parameter.py、planner_manager、dyn_a_star、closed_loop_controller、
+    ariadne_goal_bridge、simulator.xml、indoor_1.world、GRID_MAP 全参数。
+  - **ER 曲线分段斜率（决定性）**：e438 前 300s 冲到 87.9%（+24.6/+33.7/+24.3 每百秒）；
+    当前跑 0-100s 仅 +13.1，**200s 起 ER 冻结在 29.6% 直到 1200s**；073402 同样 100s 起冻在 15%。
+  - **航点节奏（决定性）**：t=0-200s 发 64 个航点（间隔中位 2.0s、指令跳距合计 213.8m，实际仅走 ~65m
+    → 策略目标振荡）；**t=200-400s 仅 5 个航点，400s 后归零 → ARiADNE 停止发新目标是 ER 冻结直接原因**
+    （SCAN 侧 161 replans 全健康、运动链正常）。
+  - escape 路径合计 64.9m ≈ 全程轨迹 92.6m 的 70%（4-6 次集中在前 200s）。
+  - 当前独有差异清单：① escape recovery + policy_blocked_nodes(≤32) + stalled_complete(20s) 三连机制；
+    ② utility_range_factor 0.5→1.0；③ 运动层 kinematic_sim+gazebo_bridge → ModelPlugin
+    （cmdTimeout 0.3/maxVx 0.8/maxVy 0.5/maxVyaw 1.0）；④ livox→velodyne ray 传感器（360°×59.7°,10Hz,40m）
+    + cloud_range_filter 接线调整；⑤ respawn=true。
+  - **嫌疑排序**：①escape 三连机制（70% 轨迹耗在 escape + blocked 扭曲策略 + 航点枯竭）>
+    ②utility_range 1.0（策略效用分布偏移，0.5 下 98.6%）> ③运动层架构（0-200s 斜率减半的部分原因）>
+    ④雷达换装（二阶，经地图/前沿间接）> ⑤respawn（无关，仅次生冻结风险）。
+  - **最小 A-B 顺序**：A-B-1 escape:=false；A-B-2 utility_range_factor:=0.5；A-B-3 回退 e438 运动层（成本最高）。
+- **AB-0 定案（当前架构 + e438 决策语义）→ ER 恢复历史水平 ✅**（报告 114647）：
+  - 配置：utility_range_factor=0.5 + enable_escape_recovery=false + stalled_complete_seconds=0.0
+    （仅改 go2_ariadne.launch），ModelPlugin/Velodyne/SCAN/地图链全部保持当前。
+  - **ER_final 95.1% @ 961s，degraded=False**；轨迹 264.5m（e438: 251.9m）；T95=486s（e438: 460s）；
+    ER 曲线全程健康（+20/+16.5/+18.8/+28.4 每百秒），~475s 效用归零自然完成；
+    obst=0、astar=64 全自愈、escape=0；STOP_REASON 全程仅 6 次 oscillation_break（AVOID_OSCILLATION 兜住，未成环）。
+  - **裁决：ER 98.6→29.6 的回归来源 = ARiADNE 新增决策机制组合（escape/blocked/stalled/utility 1.0），
+    当前架构（ModelPlugin/Velodyne/SCAN/地图链）无罪。** ARiADNE 调试结束，保留历史决策行为。
+  - 遗留注意：Depot 曾因 utility 0.5 停摆改 1.0（D2/D3 复盘）——本次回 0.5 后 Depot 需复测，
+    楼梯/Depot 场景按需再调该参数；escape/blocked/stalled 代码保留但默认关，若他场景复现 A-B-A-B 再议。
+- **projected_map"墙外 unknown"排查（2026-08-28，短测试，未改代码）**：
+  - projected_map 窗口随观测生长（183s: 149×170 覆盖 x≤21.4；422s: 268×170 覆盖全建筑 x≤45.2），
+    octomap_server 无 bbox 限制；"建筑外 unknown"=窗口内未观测格（27208），属 OccupancyGrid 正常语义。
+  - **frontier 出界=0/75**、**utility>0 节点出界=0/4**（GT 室内掩膜判据；
+    连通域判据下 2 个"不连通"点经 GT 判据确认是未打通邻室）。
+  - 墙投影基本闭合：仅 (9.5,19.2) 附近 2 格孤立 free + 3 格被夹墙格的微小泄漏，
+    未演化出任何出界目标，无需处理。
+  - **结论：不需要 exploration_boundary mask。** 抓取/分析脚本在 /tmp/cap_*.py（未入库）。
+
 ## 2026-08-27：CHAMP 物理接入后回归问题（待处理）
 
 - 好转：腿不再乱飞，12 个关节角已能保持有界，模型、CHAMP、ros_control 均能启动。

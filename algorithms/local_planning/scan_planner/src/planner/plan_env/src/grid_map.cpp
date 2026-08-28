@@ -851,6 +851,7 @@ void GridMap::sensorPoseCallback(const nav_msgs::OdometryConstPtr &pose_msg)
   md_.ray_pos_ = ray_pos;
   md_.ray_q_ = ray_q;
   md_.has_ray_pose_ = true;
+  md_.last_ray_pose_stamp_ = pose_msg->header.stamp;
   updateSlidingMap(md_.ray_pos_);
 }
 
@@ -874,6 +875,7 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
   pcl::PointCloud<pcl::PointXYZ> latest_cloud;
   pcl::fromROSMsg(*img, latest_cloud);
 
+  md_.last_cloud_stamp_ = img->header.stamp;
   md_.has_cloud_ = true;
 
   if (latest_cloud.points.size() == 0)

@@ -2,6 +2,9 @@
 #include <plan_manage/scan_replan_fsm.h>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
+#include <sstream>
+#include <std_msgs/String.h>
 
 namespace
 {
@@ -99,6 +102,7 @@ namespace scan_planner
     bspline_pub_ = nh.advertise<scan_planner::Bspline>("/planning/bspline", 10);
     data_disp_pub_ = nh.advertise<scan_planner::DataDisp>("/planning/data_display", 100);
     self_inflation_pub_ = nh.advertise<visualization_msgs::Marker>("self_inflation", 10, true);
+    diag_snapshot_pub_ = nh.advertise<std_msgs::String>("/scan_diag/snapshot", 5);
 
     if (navi_mode_ == NAVI_MODE::MANUAL_TARGET)
       goal_sub_ = nh.subscribe("/move_base_simple/goal", 1, &SCANReplanFSM::rvizGoalCallback, this);
@@ -369,6 +373,13 @@ namespace scan_planner
     }
 
     trigger_ = true;
+    last_initial_path_rx_time_ = ros::Time::now();
+    last_initial_path_stamp_ = msg->header.stamp;
+    last_initial_path_pts_.clear();
+    last_initial_path_pts_.reserve(msg->poses.size());
+    for (const auto &pose_stamped : msg->poses)
+      last_initial_path_pts_.emplace_back(
+          pose_stamped.pose.position.x, pose_stamped.pose.position.y, pose_stamped.pose.position.z);
     end_pt_ << msg->poses.back().pose.position.x,
         msg->poses.back().pose.position.y,
         msg->poses.back().pose.position.z + body_height_;
@@ -442,6 +453,7 @@ namespace scan_planner
     odom_orient_.x() = msg->pose.pose.orientation.x;
     odom_orient_.y() = msg->pose.pose.orientation.y;
     odom_orient_.z() = msg->pose.pose.orientation.z;
+    odom_stamp_ = msg->header.stamp;
 
     have_odom_ = true;
     publishSelfInflationMarker();
@@ -537,6 +549,8 @@ namespace scan_planner
     int pre_s = int(exec_state_);
     exec_state_ = new_state;
     cout << "[" + pos_call + "]: from " + state_str[pre_s] + " to " + state_str[int(new_state)] << endl;
+    if (new_state == EMERGENCY_STOP && pre_s != int(EMERGENCY_STOP))
+      dumpDiagSnapshot("FSM->EMERGENCY_STOP via " + pos_call);
   }
 
   std::pair<int, SCANReplanFSM::FSM_EXEC_STATE> SCANReplanFSM::timesOfConsecutiveStateCalls()
@@ -549,6 +563,187 @@ namespace scan_planner
     static string state_str[7] = {"INIT", "WAIT_TARGET", "GEN_NEW_TRAJ", "REPLAN_TRAJ", "EXEC_TRAJ", "EMERGENCY_STOP"};
 
     cout << "[FSM]: state: " + state_str[int(exec_state_)] << endl;
+  }
+
+  void SCANReplanFSM::dumpDiagSnapshot(const std::string &reason)
+  {
+    if (planner_manager_ == nullptr || planner_manager_->grid_map_ == nullptr)
+      return;
+    auto map = planner_manager_->grid_map_;
+    LocalTrajData *info = &planner_manager_->local_data_;
+
+    const ros::Time now = ros::Time::now();
+    const double yaw = getOdomYaw();
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(3);
+
+    oss << "{\"reason\":\"" << reason << "\",\"snap_n\":" << diag_snapshot_count_
+        << ",\"state\":" << int(exec_state_)
+        << ",\"fail_n\":" << replan_fail_count_
+        << ",\"frozen\":" << (go2_execution_frozen_ ? 1 : 0)
+        << ",\"odom\":[" << odom_pos_(0) << "," << odom_pos_(1) << "," << odom_pos_(2) << "]"
+        << ",\"vel\":[" << odom_vel_(0) << "," << odom_vel_(1) << "," << odom_vel_(2) << "]"
+        << ",\"yaw\":" << yaw
+        << ",\"start_pt\":[" << start_pt_(0) << "," << start_pt_(1) << "," << start_pt_(2) << "]"
+        << ",\"end_pt\":[" << end_pt_(0) << "," << end_pt_(1) << "," << end_pt_(2) << "]"
+        << ",\"start_odom_dist\":" << (start_pt_ - odom_pos_).norm()
+        << ",\"local_target\":[" << local_target_pt_(0) << "," << local_target_pt_(1) << "," << local_target_pt_(2) << "]";
+
+    const double t_cur = (now - info->start_time_).toSec();
+    oss << ",\"traj\":{\"start_pos\":[" << info->start_pos_(0) << "," << info->start_pos_(1) << ","
+        << info->start_pos_(2) << "]"
+        << ",\"start_time_age\":" << (info->start_time_.toSec() > 1e-5 ? (now - info->start_time_).toSec() : -1.0)
+        << ",\"duration\":" << info->duration_
+        << ",\"t_cur\":" << t_cur
+        << ",\"odom_traj_start_dist\":" << (info->start_pos_ - odom_pos_).norm()
+        << ",\"cps\":[";
+
+    /* sample the current trajectory from its start; report raw/inflate occupancy
+       and whether each sample is inside the sliding-map window */
+    const double t_end = std::min(info->duration_, 2.4);
+    bool first_sample = true;
+    for (double t = 0.0; t <= t_end + 1e-6; t += 0.2)
+    {
+      Eigen::Vector3d pos = info->position_traj_.evaluateDeBoorT(t);
+      Eigen::Vector3d pos_next = info->position_traj_.evaluateDeBoorT(std::min(t + 0.05, info->duration_));
+      const double syaw = estimateYawFromSegment(pos, pos_next);
+      if (!first_sample)
+        oss << ",";
+      first_sample = false;
+      oss << "[" << pos(0) << "," << pos(1) << "," << pos(2) << ","
+          << map->getOccupancy(pos) << ","
+          << map->getInflateOccupancy(pos, syaw) << ","
+          << (map->isInMap(pos) ? 1 : 0) << "," << syaw << "]";
+    }
+    oss << "]}";
+
+    /* latest /initial_path handed over by the global layer */
+    oss << ",\"initial_path\":{\"rx_age\":"
+        << (last_initial_path_rx_time_.toSec() > 1e-5 ? (now - last_initial_path_rx_time_).toSec() : -1.0)
+        << ",\"n\":" << last_initial_path_pts_.size();
+    double max_seg = 0.0;
+    oss << ",\"pts\":[";
+    for (size_t i = 0; i < last_initial_path_pts_.size() && i < 24; ++i)
+    {
+      const Eigen::Vector3d &p = last_initial_path_pts_[i];
+      if (i > 0)
+        max_seg = std::max(max_seg, (p - last_initial_path_pts_[i - 1]).norm());
+      oss << (i > 0 ? "," : "") << "[" << p(0) << "," << p(1) << "," << p(2) << ","
+          << map->getOccupancy(p) << ","
+          << map->getInflateOccupancy(p, 0.0) << ","
+          << (map->isInMap(p) ? 1 : 0) << "]";
+    }
+    oss << "],\"max_seg\":" << max_seg << "}";
+
+    /* grid map internals: sliding window bounds + pose/cloud timing */
+    const Eigen::Vector3d bmin = map->getMapMinBoundary();
+    const Eigen::Vector3d bmax = map->getMapMaxBoundary();
+    const Eigen::Vector3d ray = map->getRayPos();
+    oss << ",\"map\":{\"min\":[" << bmin(0) << "," << bmin(1) << "," << bmin(2) << "]"
+        << ",\"max\":[" << bmax(0) << "," << bmax(1) << "," << bmax(2) << "]"
+        << ",\"ray_pos\":[" << ray(0) << "," << ray(1) << "," << ray(2) << "]"
+        << ",\"dc_offset\":" << map->getDoubleCylinderOffset()
+        << ",\"dc_radius\":" << map->getDoubleCylinderRadius()
+        << ",\"cloud_pose_age\":" << (now - map->getLastCloudStamp()).toSec()
+        << ",\"pose_stamp_age\":" << (now - map->getLastRayPoseStamp()).toSec()
+        << ",\"odom_stamp_age\":" << (odom_stamp_.toSec() > 1e-5 ? (now - odom_stamp_).toSec() : -1.0)
+        << "}}";
+
+    const std::string payload = oss.str();
+    ROS_ERROR("[SCAN_DIAG] %s", payload.c_str());
+
+    std_msgs::String msg;
+    msg.data = payload;
+    diag_snapshot_pub_.publish(msg);
+    diag_snapshot_count_++;
+  }
+
+  void SCANReplanFSM::logReplanDiag()
+  {
+    if (diag_anomaly_logged_ || planner_manager_ == nullptr ||
+        planner_manager_->grid_map_ == nullptr || !have_odom_)
+      return;
+    auto map = planner_manager_->grid_map_;
+    const Eigen::Vector3d bmin = map->getMapMinBoundary();
+    const Eigen::Vector3d bmax = map->getMapMaxBoundary();
+    if ((bmax - bmin).head<2>().minCoeff() < 1.0) // sliding map not initialized yet
+      return;
+
+    const bool odom_in = map->isInMap(odom_pos_);
+    if (!diag_map_warmed_)
+    {
+      if (!odom_in)
+        return; // wait until the map has warmed around the robot before judging
+      diag_map_warmed_ = true;
+    }
+
+    LocalTrajData *info = &planner_manager_->local_data_;
+    const bool has_traj = info->start_time_.toSec() > 1e-5 && info->duration_ > 1e-5;
+    double t0 = has_traj
+                    ? std::min(std::max((ros::Time::now() - info->start_time_).toSec(), 0.0), info->duration_)
+                    : 0.0;
+
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(3);
+    oss << "{\"odom\":[" << odom_pos_(0) << "," << odom_pos_(1) << "]"
+        << ",\"od_in\":" << (odom_in ? 1 : 0)
+        << ",\"start\":[" << start_pt_(0) << "," << start_pt_(1) << "]"
+        << ",\"d_so\":" << (start_pt_ - odom_pos_).norm()
+        << ",\"ray\":[" << map->getRayPos()(0) << "," << map->getRayPos()(1) << "]"
+        << ",\"bmin\":[" << bmin(0) << "," << bmin(1) << "]"
+        << ",\"bmax\":[" << bmax(0) << "," << bmax(1) << "]"
+        << ",\"cps\":[";
+
+    const bool start_out = !map->isInMap(start_pt_);
+    const double start_margin = std::min(std::min(start_pt_(0) - bmin(0), bmax(0) - start_pt_(0)),
+                                         std::min(start_pt_(1) - bmin(1), bmax(1) - start_pt_(1)));
+    const bool start_occ = has_traj && map->isInMap(start_pt_) &&
+                           (map->getOccupancy(start_pt_) != 0 ||
+                            map->getInflateOccupancy(start_pt_, estimateYawFromSegment(odom_pos_, start_pt_)) != 0);
+    bool cps_out = false;
+    bool any_occ = start_occ;
+
+    for (int k = 0; has_traj && k < 3; ++k)
+    {
+      const double t = std::min(t0 + 0.1 * k, info->duration_);
+      const Eigen::Vector3d pos = info->position_traj_.evaluateDeBoorT(t);
+      const Eigen::Vector3d nxt = info->position_traj_.evaluateDeBoorT(std::min(t + 0.05, info->duration_));
+      const bool inmap = map->isInMap(pos);
+      const double margin = std::min(std::min(pos(0) - bmin(0), bmax(0) - pos(0)),
+                                     std::min(pos(1) - bmin(1), bmax(1) - pos(1)));
+      const int raw = inmap ? map->getOccupancy(pos) : -1;
+      const int inf = inmap ? map->getInflateOccupancy(pos, estimateYawFromSegment(pos, nxt)) : -1;
+      if (!inmap)
+        cps_out = true;
+      else if (raw != 0 || inf != 0)
+        any_occ = true;
+      oss << (k > 0 ? "," : "") << "[" << pos(0) << "," << pos(1) << "," << (inmap ? 1 : 0)
+          << "," << raw << "," << inf << "," << margin << "]";
+    }
+    oss << "]}";
+
+    ROS_INFO("[SCAN_RDIAG] %s", oss.str().c_str());
+
+    if (odom_in && (start_out || cps_out))
+    {
+      ROS_ERROR("[SCAN_ANOMALY] class=C odom_in=1 start_out=%d cps_out=%d start_margin=%.3f d_so=%.3f",
+                start_out, cps_out, start_margin, (start_pt_ - odom_pos_).norm());
+      dumpDiagSnapshot("anomaly_C");
+      diag_anomaly_logged_ = true;
+    }
+    else if (odom_in && any_occ)
+    {
+      ROS_ERROR("[SCAN_ANOMALY] class=D all_in_map_but_occupied d_so=%.3f", (start_pt_ - odom_pos_).norm());
+      dumpDiagSnapshot("anomaly_D");
+      diag_anomaly_logged_ = true;
+    }
+    else if (!odom_in)
+    {
+      ROS_ERROR("[SCAN_ANOMALY] class=O odom_out_of_map ray=[%.3f %.3f]",
+                map->getRayPos()(0), map->getRayPos()(1));
+      dumpDiagSnapshot("anomaly_O");
+      diag_anomaly_logged_ = true;
+    }
   }
 
   void SCANReplanFSM::execFSMCallback(const ros::TimerEvent &e)
@@ -619,6 +814,9 @@ namespace scan_planner
       else
       {
         replan_fail_count_++;
+        if (replan_fail_count_ == 3 || replan_fail_count_ == 10 || replan_fail_count_ == 50 ||
+            replan_fail_count_ % 100 == 0)
+          dumpDiagSnapshot("GEN_NEW_TRAJ_fail_n=" + std::to_string(replan_fail_count_));
         changeFSMExecState(GEN_NEW_TRAJ, "FSM");
       }
       break;
@@ -896,6 +1094,7 @@ namespace scan_planner
 
   bool SCANReplanFSM::callReboundReplan(bool flag_use_poly_init, bool flag_randomPolyTraj)
   {
+    logReplanDiag();
 
     getLocalTarget();
 

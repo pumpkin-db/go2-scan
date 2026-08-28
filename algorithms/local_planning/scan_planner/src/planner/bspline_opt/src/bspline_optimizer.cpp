@@ -2,6 +2,8 @@
 #include "bspline_opt/gradient_descent_optimizer.h"
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 // using namespace std;
 
 namespace scan_planner
@@ -754,6 +756,43 @@ namespace scan_planner
         }
         if (j < 0) // fail to get the obs free point
         {
+          static int diag_drone_in_obs_cnt = 0;
+          static ros::Time diag_last_dump(0);
+          diag_drone_in_obs_cnt++;
+          if ((ros::Time::now() - diag_last_dump).toSec() > 2.0)
+          {
+            diag_last_dump = ros::Time::now();
+            std::ostringstream dss;
+            dss << std::fixed << std::setprecision(3)
+                << "{\"cnt\":" << diag_drone_in_obs_cnt << ",\"first_bad_i\":" << i
+                << ",\"cps_size\":" << cps_.size << ",\"pts\":[";
+            const int jmax = std::min(i + 4, cps_.size - 1);
+            for (int jj = 0; jj <= jmax; ++jj)
+            {
+              const Eigen::Vector3d &p = cps_.points.col(jj);
+              const double y = estimateControlPointYaw(cps_.points, jj);
+              dss << (jj > 0 ? "," : "") << "[" << p(0) << "," << p(1) << "," << p(2) << ","
+                  << grid_map_->getOccupancy(p) << ","
+                  << grid_map_->getInflateOccupancy(p, y) << ","
+                  << (grid_map_->isInMap(p) ? 1 : 0) << "," << y << "]";
+            }
+            dss << "]";
+            /* front/rear probe of control point 0 (the trajectory start) */
+            const Eigen::Vector3d &p0 = cps_.points.col(0);
+            const double y0 = estimateControlPointYaw(cps_.points, 0);
+            const Eigen::Vector3d h0(std::cos(y0), std::sin(y0), 0.0);
+            const Eigen::Vector3d p0_front = p0 + 0.18 * h0;
+            const Eigen::Vector3d p0_rear = p0 - 0.18 * h0;
+            dss << ",\"p0_front\":[" << grid_map_->getInflateOccupancy(p0_front, y0)
+                << "," << (grid_map_->isInMap(p0_front) ? 1 : 0) << "]"
+                << ",\"p0_rear\":[" << grid_map_->getInflateOccupancy(p0_rear, y0)
+                << "," << (grid_map_->isInMap(p0_rear) ? 1 : 0) << "]";
+            const Eigen::Vector3d bmin = grid_map_->getMapMinBoundary();
+            const Eigen::Vector3d bmax = grid_map_->getMapMaxBoundary();
+            dss << ",\"map_min\":[" << bmin(0) << "," << bmin(1) << "," << bmin(2) << "]"
+                << ",\"map_max\":[" << bmax(0) << "," << bmax(1) << "," << bmax(2) << "]}";
+            ROS_ERROR("[SCAN_DIAG-OPT] drone_in_obs %s", dss.str().c_str());
+          }
           ROS_ERROR("ERROR! the drone is in obstacle. This should not happen.");
           in_id = 0;
         }
@@ -1014,10 +1053,29 @@ namespace scan_planner
 
             if (t <= bspline_interval_) // First 3 control points in obstacles!
             {
-              cout << cps_.points.col(1).transpose() << "\n"
-                   << cps_.points.col(2).transpose() << "\n"
-                   << cps_.points.col(3).transpose() << "\n"
-                   << cps_.points.col(4).transpose() << endl;
+              static int diag_first3_cnt = 0;
+              static ros::Time diag_last_dump(0);
+              diag_first3_cnt++;
+              if ((ros::Time::now() - diag_last_dump).toSec() > 2.0)
+              {
+                diag_last_dump = ros::Time::now();
+                std::ostringstream dss;
+                dss << std::fixed << std::setprecision(3)
+                    << "{\"cnt\":" << diag_first3_cnt << ",\"t\":" << t
+                    << ",\"pos\":[" << pos(0) << "," << pos(1) << "," << pos(2) << "],\"pts\":[";
+                const int jmax = std::min(order_ + 5, cps_.size - 1);
+                for (int jj = 0; jj <= jmax; ++jj)
+                {
+                  const Eigen::Vector3d &p = cps_.points.col(jj);
+                  const double y = estimateControlPointYaw(cps_.points, jj);
+                  dss << (jj > 0 ? "," : "") << "[" << p(0) << "," << p(1) << "," << p(2) << ","
+                      << grid_map_->getOccupancy(p) << ","
+                      << grid_map_->getInflateOccupancy(p, y) << ","
+                      << (grid_map_->isInMap(p) ? 1 : 0) << "," << y << "]";
+                }
+                dss << "]}";
+                ROS_ERROR("[SCAN_DIAG-OPT] first3_in_obs %s", dss.str().c_str());
+              }
               ROS_WARN("First 3 control points in obstacles! return false, t=%f", t);
               return false;
             }
