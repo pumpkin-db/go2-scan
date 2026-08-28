@@ -25,6 +25,16 @@
   <gazebo reference="base">
     <kinematic>true</kinematic>
   </gazebo>
+  <gazebo>
+    <plugin name="go2_kinematic_model" filename="libgo2_kinematic_model_plugin.so">
+      <cmdTimeout>0.3</cmdTimeout>
+      <maxVx>0.8</maxVx>
+      <maxVy>0.5</maxVy>
+      <maxVyaw>1.0</maxVyaw>
+      <lidarX>0.2</lidarX>
+      <lidarZ>0.2077</lidarZ>
+    </plugin>
+  </gazebo>
   <link name="Head_upper">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />

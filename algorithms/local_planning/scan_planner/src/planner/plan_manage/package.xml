@@ -57,6 +57,7 @@
   <build_depend>tf</build_depend>
   <build_depend>visualization_msgs</build_depend>
   <build_depend>grid_map_msgs</build_depend>
+  <build_depend>gazebo_dev</build_depend>
   <build_depend>message_runtime</build_depend>
   
   <build_depend>plan_env</build_depend>
@@ -80,6 +81,7 @@
   <exec_depend>tf</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>grid_map_msgs</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>message_runtime</exec_depend>
 
   <exec_depend>plan_env</exec_depend>

@@ -4,6 +4,22 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-27：CHAMP 物理接入后回归问题（待处理）
+
+- 好转：腿不再乱飞，12 个关节角已能保持有界，模型、CHAMP、ros_control 均能启动。
+- 新回归：初始站立时腿自动动、机身晃动；实跐时狗不能正常移动。
+- 新回归：ARiADNE 蓝色砖块生成错位，高可能是物理姿态/高度与 LiDAR、body pose 和 world/map 契约不一致。
+
+### 快速可用方案（已实施）
+
+已恢复「身体运动学积分 + 腿视觉步态」；身体 z 可跟随楼梯 GT 高程上升，并由单一 body pose 同时计算 LiDAR pose。保留物理组件仅作显示，不参与运动。
+
+## 2026-08-27：恢复运动学后新回归（待处理）
+
+- 用户实跑：scan_map 开始漂移，ARiADNE 蓝色砖块同步漂移；腿不乱飞但姿态扭曲，且没有走路动态。
+- 高优先疑点：源码恢复后未重新 catkin_make，devel/lib 可能仍在运行旧的物理版二进制；这可同时解释“静态腿”和异常姿态。
+- 次要疑点：点云 world/sensor frame 与 scan_cloud_accumulator 假设不一致，或 body_pose/lidar_pose 时间不同步。重编译后应先静止检查两者，再检查点云 frame_id 与位姿外参。
+
 ## 2026-08-26：Depot 三轮对照定稿（D2=49.2% 基准确立）→ 任务#3 收官 ✅
 
 | 跑 | 效用环 | ER_final | 判废 | 轨迹 | 备注 |
@@ -859,3 +875,24 @@ terminate called after throwing 'std::length_error'
 4. **Depot 纹理很多加载失败**（用户实测确认仍大面积白模；已做过 script URI
    官方格式化 + 4 个 PBR-only visual 兜底，ogre.log 显示 15 张贴图加载成功
    但未除根。详见 临时问题.md 第 6 条。纯视觉问题，不影响雷达/探索/评分）。
+
+## 2026-08-28：Gazebo ModelPlugin 运动迁移阶段 A
+
+- 新增 Go2 ModelPlugin：ROS 回调仅缓存 `/cmd_vel`，Gazebo WorldUpdate 负责积分
+  `x/y/yaw`、写入 model pose，并发布 `/quad_0/body_pose` 与 `/quad_0/lidar_pose`；
+  `z` 暂时固定，腿锁定为站立姿态。
+- 新模式已关闭旧 `go2_kinematic_sim → gazebo_bridge → /gazebo/set_model_state`
+  运动链及 gait publisher，Gazebo 中只保留一个模型位姿写入者。
+- 阶段 A 基本跑通：`/cmd_vel`、body/lidar pose、LiDAR、scan_map、SCAN-Planner
+  与 ARiADNE 基础链均可运行。
+- 正式 10 ms / 100 Hz 配置下约 0.262 m/s 法向运动墙测（100 帧）：60% 帧约
+  0 mm，40% 帧约 +2.7 mm；旧架构的 ±20 ms 离散档消失。
+- 剩余约 10 ms 离散误差暂时接受，不再继续调试点云时序。下一步进入阶段 B
+  前先完成楼梯与 SCAN-Planner 既有 3D 接口审计。
+
+### 2026-08-28：ARiADNE ping-pong 现象固化
+
+- Depot 与 indoor_1 均曾出现相邻 2m waypoint 往返；当前不再继续 utility/点云 A/B。
+- Depot 观测确认：action candidates 很多、utility 非零，greedy policy 偏向
+  `(-12,-2)` 与 `(-10,-2)`；同时 projected_map known/free 长时间不变，地图停滞。
+- 下一步改为对照官方 ARiADNE 系统审计，暂不改参数、ModelPlugin 或点云链。

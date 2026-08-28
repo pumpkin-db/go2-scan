@@ -2,9 +2,7 @@
   <!-- ============================================================ -->
   <!-- Gazebo 场景仿真：indoor_1.world + Go2 狗 + mid360 LiDAR     -->
   <!--   mid360 插件出 /mid360_points（传感器坐标）              -->
-  <!--   go2_kinematic_sim 积分 /cmd_vel 出 /quad_0/body_pose        -->
-  <!--   gazebo_bridge 把 body_pose 同步回 Gazebo（set_model_state） -->
-  <!--                 并发布 /quad_0/lidar_pose 给 SCAN-Planner     -->
+  <!--   Go2 ModelPlugin 在 WorldUpdate 内积分 /cmd_vel、更新模型并发布 pose -->
   <!-- ============================================================ -->
 
   <arg name="world_file" default="$(env HOME)/claude/raicom/go2-scan/simulation/worlds/indoor_1.world"/>
@@ -49,31 +47,23 @@
   <!-- spawn 狗模型（URDF 已含 mid360 LiDAR 插件） -->
   <param name="robot_description" textfile="$(find go2_description)/urdf/go2_description.urdf"/>
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_go2"
-        args="-param robot_description -urdf -model go2_description -x $(arg init_x) -y $(arg init_y) -z $(arg init_z)"/>
+        args="-param robot_description -urdf -model go2_description -x $(arg init_x) -y $(arg init_y) -z $(arg init_z) -Y $(arg init_yaw)
+              -J FL_hip_joint 0.05 -J FL_thigh_joint 0.82 -J FL_calf_joint -1.58
+              -J FR_hip_joint -0.05 -J FR_thigh_joint 0.82 -J FR_calf_joint -1.58
+              -J RL_hip_joint 0.05 -J RL_thigh_joint 0.95 -J RL_calf_joint -1.62
+              -J RR_hip_joint -0.05 -J RR_thigh_joint 0.95 -J RR_calf_joint -1.62"/>
 
-  <!-- 2. 运动学仿真 + 控制器 -->
+  <!-- 2. ModelPlugin 是唯一模型位姿写入者；旧运动节点与 bridge 禁止同时启动 -->
   <param name="body_pose_topic" value="/quad_0/body_pose" type="str"/>
   <param name="init_x" value="$(arg init_x)" type="double"/>
   <param name="init_y" value="$(arg init_y)" type="double"/>
   <param name="init_z" value="$(arg init_z)" type="double"/>
-  <node pkg="scan_planner" name="go2_kinematic_sim" type="go2_kinematic_sim" output="screen">
-    <param name="publish_tf" value="true"/>
-    <param name="init_yaw" value="$(arg init_yaw)"/>
-    <param name="terrain_follow" value="$(arg terrain_follow)"/>
-    <param name="terrain_source" value="$(arg terrain_source)"/>
-    <param name="gt_elev_file" value="$(arg gt_elev_file)"/>
-  </node>
   <!-- remote_drive:=true 时跳过闭环控制器：其无轨迹时以 100Hz 持续发零速 Twist
        （closed_loop_controller.cpp:175 publishStop / :241 timer 0.01s），会把遥控/
        stair_transit 直驱的 /cmd_vel 稀释（B 验收首跑实证：0.4m/s 指令被稀释至
        ~0.014m/s，780s 仅走 11m）。遥控验收与爬楼直驱场景必须关闭本节点。 -->
   <arg name="remote_drive" default="false"/>
   <node unless="$(arg remote_drive)" pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
-
-  <!-- 3. 桥：body_pose -> Gazebo set_model_state + sensor_pose -->
-  <node pkg="go2_bridge" name="gazebo_bridge" type="gazebo_bridge.py" output="screen">
-    <param name="lidar_z" value="0.2077"/>
-  </node>
 
   <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换）
        点云源：两分支统一吃近距过滤后的 /mid360_points_clean（见顶部 scan_cloud 注释，
@@ -95,7 +85,6 @@
 
   <!-- 5. 狗模型 TF 显示 -->
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="go2_robot_state_publisher"/>
-  <node pkg="scan_planner" name="go2_gait_publisher" type="go2_gait_publisher" output="screen"/>
   <!-- 狗总轨迹可视化：订阅 /quad_0/body_pose，累积发布 /odom_visualization/path（his_path） -->
   <node pkg="odom_visualization" type="odom_visualization" name="odom_visualization" output="screen"/>
 

@@ -49,6 +49,7 @@
 #endif
 #include <gazebo/sensors/SensorTypes.hh>
 #include <gazebo/transport/Node.hh>
+#include <gazebo/msgs/msgs.hh>
 
 #include <sensor_msgs/PointCloud2.h>
 
@@ -287,10 +288,10 @@ void GazeboRosVelodyneLaser::OnScan(ConstLaserScanStampedPtr& _msg)
   const double MAX_RANGE = std::min(max_range_, maxRange);
   const double MIN_INTENSITY = min_intensity_;
 
-  // 2026-08-25 go2-scan 增补：每帧取传感器世界位姿，供世界系输出使用
-  // （同 livox 魔改版：父实体世界位姿 × 传感器相对位姿）
-  if (world_frame_ && parent_entity_ != nullptr) {
-    ignition::math::Pose3d wp = parent_entity_->WorldPose() * parent_ray_sensor_->Pose();
+  // LaserScanStamped 携带扫描生成时刻的传感器世界位姿；必须与同消息内 ranges
+  // 配套使用，不能在异步 OnScan 回调中重新读取已经前进的实体实时位姿。
+  if (world_frame_) {
+    ignition::math::Pose3d wp = msgs::ConvertIgn(_msg->scan().world_pose());
     sensor_world_rot_ = wp.Rot();
     sensor_world_pos_ = wp.Pos();
   }
@@ -422,4 +423,3 @@ void GazeboRosVelodyneLaser::laserQueueThread()
 }
 
 } // namespace gazebo
-

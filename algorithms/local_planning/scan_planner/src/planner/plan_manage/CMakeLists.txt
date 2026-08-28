@@ -8,6 +8,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL 1.7 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GAZEBO REQUIRED gazebo)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -54,7 +56,9 @@ include_directories(
   ${catkin_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/include
   ${EIGEN3_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
+  ${GAZEBO_INCLUDE_DIRS}
 )
+link_directories(${GAZEBO_LIBRARY_DIRS})
 
 
 add_executable(scan_planner_node
@@ -81,3 +85,6 @@ target_link_libraries(go2_kinematic_sim ${catkin_LIBRARIES})
 add_executable(go2_gait_publisher src/go2_gait_publisher.cpp)
 target_link_libraries(go2_gait_publisher ${catkin_LIBRARIES})
 
+add_library(go2_kinematic_model_plugin src/go2_kinematic_model_plugin.cpp)
+set_property(TARGET go2_kinematic_model_plugin PROPERTY CXX_STANDARD 17)
+target_link_libraries(go2_kinematic_model_plugin ${catkin_LIBRARIES} ${GAZEBO_LIBRARIES})

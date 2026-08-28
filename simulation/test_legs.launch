@@ -24,7 +24,11 @@
 
   <param name="robot_description" textfile="$(find go2_description)/urdf/go2_description.urdf"/>
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_go2"
-        args="-param robot_description -urdf -model go2_description -x $(arg init_x) -y $(arg init_y) -z $(arg init_z)"/>
+        args="-param robot_description -urdf -model go2_description -x $(arg init_x) -y $(arg init_y) -z $(arg init_z)
+              -J FL_hip_joint 0.05 -J FL_thigh_joint 0.82 -J FL_calf_joint -1.58
+              -J FR_hip_joint -0.05 -J FR_thigh_joint 0.82 -J FR_calf_joint -1.58
+              -J RL_hip_joint 0.05 -J RL_thigh_joint 0.95 -J RL_calf_joint -1.62
+              -J RR_hip_joint -0.05 -J RR_thigh_joint 0.95 -J RR_calf_joint -1.62"/>
 
   <param name="body_pose_topic" value="/quad_0/body_pose" type="str"/>
   <param name="init_x" value="$(arg init_x)" type="double"/>
