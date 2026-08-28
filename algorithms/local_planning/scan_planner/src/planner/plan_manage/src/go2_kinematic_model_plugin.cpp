@@ -107,9 +107,11 @@ private:
     stair_lock_ = msg->data;
     if (stair_lock_)
     {
-      s_prev_ = x_ * stair_dx_ + y_ * stair_dy_;
-      ROS_INFO("[go2_kinematic_model_plugin] stair monotonic lock ENGAGED d=(%.3f,%.3f) s0=%.2f",
-               stair_dx_, stair_dy_, s_prev_);
+      // s_prev_ 延迟到下一 tick 初始化：/stair_traverse_dir 与 lock 是不同话题，
+      // 跨话题到达顺序不保证，立即初始化可能用到旧方向（曾致 16m 瞬移）。
+      s_prev_pending_ = true;
+      ROS_INFO("[go2_kinematic_model_plugin] stair monotonic lock ENGAGED d=(%.3f,%.3f)",
+               stair_dx_, stair_dy_);
     }
     else
     {
@@ -281,6 +283,12 @@ private:
     // 位置级单调保护：committed 期间 s 只增不减
     if (stair_lock_)
     {
+      if (s_prev_pending_)
+      {
+        s_prev_ = x_ * stair_dx_ + y_ * stair_dy_;
+        s_prev_pending_ = false;
+        ROS_INFO("[go2_kinematic_model_plugin] lock s0=%.2f", s_prev_);
+      }
       const double s_new = x_ * stair_dx_ + y_ * stair_dy_;
       if (s_new < s_prev_)
       {
@@ -355,6 +363,7 @@ private:
   // 楼梯 committed 单调锁
   bool stair_lock_ = false;
   double stair_dx_ = 1.0, stair_dy_ = 0.0, s_prev_ = 0.0;
+  bool s_prev_pending_ = false;
 
   // committed 几何 z 剖面
   bool zprof_valid_ = false;
