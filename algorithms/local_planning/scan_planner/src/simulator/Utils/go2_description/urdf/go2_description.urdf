@@ -19,11 +19,22 @@
       </geometry>
     </collision>
   </link>
-  <!-- 2026-08-29（Track A1，用户裁决回退 a845c4a 行为）：移除 base kinematic 标签。
-       a845c4a（腿正常时期）base 是动力学体，狗物理站在四条腿上，bridge 按 /joint_states
-       驱动腿即可见步态。70916e0 为消除 scan_map 漂移加了 base kinematic，导致腿在物理上
-       失重悬空、被 bridge 传送时乱甩/僵死（e438 起的"狗腿乱飞"根源）。现删掉该标签，
-       换取 Gazebo 腿正常；代价是 30Hz set_model_state 传送下点云可能轻微抖动（历史已知）。 -->
+  <!-- base 设 kinematic：不受腿步态反作用力，位置精确由 set_model_state 决定，
+       消除雷达抖动/scan_map 漂移（2026-08-27 点云飞事故后确认必须保留；
+       腿仍为 e438e07 原版 revolute 物理关节） -->
+  <gazebo reference="base">
+    <kinematic>true</kinematic>
+  </gazebo>
+  <gazebo>
+    <plugin name="go2_kinematic_model" filename="libgo2_kinematic_model_plugin.so">
+      <cmdTimeout>0.3</cmdTimeout>
+      <maxVx>0.8</maxVx>
+      <maxVy>0.5</maxVy>
+      <maxVyaw>1.0</maxVyaw>
+      <lidarX>0.2</lidarX>
+      <lidarZ>0.2077</lidarZ>
+    </plugin>
+  </gazebo>
   <link name="Head_upper">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />

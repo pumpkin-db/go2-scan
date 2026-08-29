@@ -2,8 +2,7 @@
   <!-- ============================================================ -->
   <!-- Gazebo 场景仿真：indoor_1.world + Go2 狗 + mid360 LiDAR     -->
   <!--   mid360 插件出 /mid360_points（传感器坐标）              -->
-  <!--   go2_kinematic_sim 积分 /cmd_vel 出 /quad_0/body_pose（并广播 world→base TF） -->
-  <!--   gazebo_bridge 同步 body_pose/joint_states 回 Gazebo 并发布 lidar_pose      -->
+  <!--   Go2 ModelPlugin 在 WorldUpdate 内积分 /cmd_vel、更新模型并发布 pose -->
   <!-- ============================================================ -->
 
   <arg name="world_file" default="$(env HOME)/claude/raicom/go2-scan/simulation/worlds/indoor_1.world"/>
@@ -54,28 +53,17 @@
               -J RL_hip_joint 0.05 -J RL_thigh_joint 0.95 -J RL_calf_joint -1.62
               -J RR_hip_joint -0.05 -J RR_thigh_joint 0.95 -J RR_calf_joint -1.62"/>
 
-  <!-- 2. 运动学仿真 + 控制器 + 桥（2026-08-29 恢复 e438e07~1 旧 plant，用户裁决）：
-       go2_kinematic_sim 积分 /cmd_vel 出 /quad_0/body_pose 并广播 world→base TF；
-       gazebo_bridge 把 body_pose 同步回 Gazebo（set_model_state）、按 /joint_states
-       步态角驱动 Gazebo 腿（set_model_configuration，仿真时间节流）→ Gazebo 腿可见摆动；
-       go2_gait_publisher 见 5b。此三件套即 e438e07 之前"Gazebo 腿正常"时期的原配置。 -->
+  <!-- 2. ModelPlugin 是唯一模型位姿写入者；旧运动节点与 bridge 禁止同时启动 -->
   <param name="body_pose_topic" value="/quad_0/body_pose" type="str"/>
   <param name="init_x" value="$(arg init_x)" type="double"/>
   <param name="init_y" value="$(arg init_y)" type="double"/>
   <param name="init_z" value="$(arg init_z)" type="double"/>
-  <node pkg="scan_planner" name="go2_kinematic_sim" type="go2_kinematic_sim" output="screen">
-    <param name="publish_tf" value="true"/>
-    <param name="init_yaw" value="$(arg init_yaw)"/>
-  </node>
   <!-- remote_drive:=true 时跳过闭环控制器：其无轨迹时以 100Hz 持续发零速 Twist
        （closed_loop_controller.cpp:175 publishStop / :241 timer 0.01s），会把遥控/
        stair_transit 直驱的 /cmd_vel 稀释（B 验收首跑实证：0.4m/s 指令被稀释至
        ~0.014m/s，780s 仅走 11m）。遥控验收与爬楼直驱场景必须关闭本节点。 -->
   <arg name="remote_drive" default="false"/>
   <node unless="$(arg remote_drive)" pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
-  <node pkg="go2_bridge" name="gazebo_bridge" type="gazebo_bridge.py" output="screen">
-    <param name="lidar_z" value="0.2077"/>
-  </node>
 
   <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换）
        点云源：两分支统一吃近距过滤后的 /mid360_points_clean（见顶部 scan_cloud 注释，
@@ -98,12 +86,14 @@
   <!-- 5. 狗模型 TF 显示 -->
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="go2_robot_state_publisher"/>
   <!-- 5b. /joint_states 发布（Track A1 修复，2026-08-29）：c33cedd 曾把 gait_publisher
-       移出主栈，ROS 侧从此无人发 joint_states → RSP 拿不到 12 个 revolute 腿关节角
-       → RViz 41/44 link 缺 TF。本行恢复上游 SCAN-Planner 原版接线（a845c4a vendor 版
-       line65 即有）：静止发固定站姿、行走发摆动步态；gazebo_bridge 把同一份
-       /joint_states 应用到 Gazebo 关节（见第2节），RViz 与 Gazebo 腿同步。
-       fallback：integration/go2_bridge/scripts/go2_joint_state_publisher.py
-       （无 body_pose 的纯静态场景用）。 -->
+       移出主栈（当时它经 gazebo_bridge→set_model_configuration 驱动 Gazebo 关节，是
+       腿乱飞链路的一半；该桥已被 ModelPlugin 取代并封禁），但 ROS 侧从此无人发
+       joint_states → RSP 拿不到 12 个 revolute 腿关节角 → RViz 41/44 link 缺 TF。
+       本行恢复上游 SCAN-Planner 原版接线（a845c4a vendor 版 line65 即有）：
+       静止发固定站姿（与 spawn -J / ModelPlugin CacheStandingJoints 同值），
+       行走时发摆动步态——只进 RViz TF；Gazebo 侧关节仍由 ModelPlugin 每 tick
+       钉站姿，两者物理上互不影响。fallback：integration/go2_bridge/scripts/
+       go2_joint_state_publisher.py（无 body_pose 的纯静态场景用）。 -->
   <node pkg="scan_planner" name="go2_gait_publisher" type="go2_gait_publisher" output="screen"/>
   <!-- 狗总轨迹可视化：订阅 /quad_0/body_pose，累积发布 /odom_visualization/path（his_path） -->
   <node pkg="odom_visualization" type="odom_visualization" name="odom_visualization" output="screen"/>
