@@ -85,14 +85,16 @@
 
   <!-- 5. 狗模型 TF 显示 -->
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="go2_robot_state_publisher"/>
-  <!-- 5b. 站姿 /joint_states 发布（Track A1 修复，2026-08-29）：主栈原先无任何
-       joint_states 发布者（ModelPlugin 只钉 Gazebo 侧关节、不广播 ROS 话题；
-       go2_gait_publisher 仅存在于 test_legs.launch），RSP 拿不到 12 个 revolute
-       腿关节角 → RViz RobotModel 41/44 link 报 "No transform to [world]"（实测）。
-       本节点发固定站姿（与 spawn -J / ModelPlugin CacheStandingJoints 同值），
-       纯服务 TF/RViz；Gazebo 关节仍由 ModelPlugin 独占驱动，禁止把本话题
-       接入 set_model_configuration 类链路（历史已证明腿会乱飞）。 -->
-  <node pkg="go2_bridge" name="go2_joint_state_publisher" type="go2_joint_state_publisher.py" output="screen"/>
+  <!-- 5b. /joint_states 发布（Track A1 修复，2026-08-29）：c33cedd 曾把 gait_publisher
+       移出主栈（当时它经 gazebo_bridge→set_model_configuration 驱动 Gazebo 关节，是
+       腿乱飞链路的一半；该桥已被 ModelPlugin 取代并封禁），但 ROS 侧从此无人发
+       joint_states → RSP 拿不到 12 个 revolute 腿关节角 → RViz 41/44 link 缺 TF。
+       本行恢复上游 SCAN-Planner 原版接线（a845c4a vendor 版 line65 即有）：
+       静止发固定站姿（与 spawn -J / ModelPlugin CacheStandingJoints 同值），
+       行走时发摆动步态——只进 RViz TF；Gazebo 侧关节仍由 ModelPlugin 每 tick
+       钉站姿，两者物理上互不影响。fallback：integration/go2_bridge/scripts/
+       go2_joint_state_publisher.py（无 body_pose 的纯静态场景用）。 -->
+  <node pkg="scan_planner" name="go2_gait_publisher" type="go2_gait_publisher" output="screen"/>
   <!-- 狗总轨迹可视化：订阅 /quad_0/body_pose，累积发布 /odom_visualization/path（his_path） -->
   <node pkg="odom_visualization" type="odom_visualization" name="odom_visualization" output="screen"/>
 
