@@ -55,7 +55,7 @@ class Runner:
         parameter.AVOID_OSCILLATION = rospy.get_param('~avoid_waypoint_oscillation', parameter.AVOID_OSCILLATION)
         parameter.ENABLE_SAVE_MODE = rospy.get_param('~enable_save_mode', parameter.ENABLE_SAVE_MODE)
         parameter.ENABLE_DSTARLITE = rospy.get_param('~enable_dstarlite', parameter.ENABLE_DSTARLITE)
-        self.enable_escape_recovery = rospy.get_param('~enable_escape_recovery', True)
+        self.enable_escape_recovery = rospy.get_param('~enable_escape_recovery', False)
         self.escape_min_distance = rospy.get_param(
             '~escape_min_distance', 2 * parameter.NODE_RESOLUTION)
         self.escape_required_displacement = rospy.get_param(

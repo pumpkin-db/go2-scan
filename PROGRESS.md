@@ -6,6 +6,13 @@
 
 ## 2026-08-29：主线交接与 P0 资料审计
 
+### ARiADNE stable-baseline guard
+
+- Escape recovery / blocked-node 代码保留供实验，但稳定 e438-derived baseline 默认关闭：
+  `rl_planner.py` fallback 与 `go2_ariadne.launch` 均为 `enable_escape_recovery=false`。
+- `utility_range_factor=0.5`；`policy_blocked_nodes` 初始为空，且仅在 escape 显式启用后写入。
+  Depot/indoor 无额外覆盖；P2 stair-only 不启动 ARiADNE。
+
 - 完整阅读 `CODEX-MASTER-HANDOFF.md`、本文件、`ZCODE_RUNBOOK.md`、真机交接资料及附件；
   当前开发分支切换为 `refactor/multifloor-realrobot-v2`（基于稳定 tip `7e94cad`）。
 - 真机契约确认：定位 `/Odometry`、世界系点云 `/cloud_registered`、最终运动后端复用已验证的
