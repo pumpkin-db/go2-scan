@@ -31,6 +31,7 @@
       <maxVx>0.8</maxVx>
       <maxVy>0.5</maxVy>
       <maxVyaw>1.0</maxVyaw>
+      <maxVz>0.5</maxVz>
       <lidarX>0.2</lidarX>
       <lidarZ>0.2077</lidarZ>
     </plugin>

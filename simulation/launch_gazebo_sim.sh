@@ -55,6 +55,7 @@ export ROS_PACKAGE_PATH=$BRIDGE:$ROS_PACKAGE_PATH
 export CMAKE_PREFIX_PATH=$STAIR_PERCEPTION/devel:$CMAKE_PREFIX_PATH
 export LD_LIBRARY_PATH=$STAIR_PERCEPTION/devel/lib:$LD_LIBRARY_PATH
 export ROS_PACKAGE_PATH=$STAIR_PERCEPTION/src:$ROS_PACKAGE_PATH
+export PYTHONPATH=$STAIR_PERCEPTION/devel/lib/python3/dist-packages:${PYTHONPATH:-}
 
 # 6b) 场景支持：scene:=<name> 时 source scenes/<name>/env.sh（世界/GT/出生点/model路径）
 SCENE=""

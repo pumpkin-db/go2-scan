@@ -10,6 +10,7 @@
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
+#include <std_msgs/Float64.h>
 #include <tf/transform_broadcaster.h>
 
 namespace gazebo
@@ -32,10 +33,13 @@ public:
     if (sdf->HasElement("maxVx")) max_vx_ = sdf->Get<double>("maxVx");
     if (sdf->HasElement("maxVy")) max_vy_ = sdf->Get<double>("maxVy");
     if (sdf->HasElement("maxVyaw")) max_vyaw_ = sdf->Get<double>("maxVyaw");
+    if (sdf->HasElement("maxVz")) max_vz_ = sdf->Get<double>("maxVz");
     if (sdf->HasElement("lidarX")) lidar_x_ = sdf->Get<double>("lidarX");
     if (sdf->HasElement("lidarZ")) lidar_z_ = sdf->Get<double>("lidarZ");
 
     cmd_sub_ = nh_->subscribe("/cmd_vel", 1, &Go2KinematicModelPlugin::OnCmd, this);
+    z_target_sub_ = nh_->subscribe("/sim/body_z_target", 1,
+                                   &Go2KinematicModelPlugin::OnZTarget, this);
     body_pub_ = nh_->advertise<nav_msgs::Odometry>("/quad_0/body_pose", 10);
     lidar_pub_ = nh_->advertise<nav_msgs::Odometry>("/quad_0/lidar_pose", 10);
 
@@ -67,6 +71,14 @@ private:
     last_cmd_ = world_->SimTime();
   }
 
+  void OnZTarget(const std_msgs::Float64ConstPtr &msg)
+  {
+    std::lock_guard<std::mutex> lock(cmd_mutex_);
+    z_target_ = msg->data;
+    last_z_target_ = world_->SimTime();
+    have_z_target_ = std::isfinite(z_target_);
+  }
+
   void CacheStandingJoints()
   {
     const std::array<std::pair<const char *, double>, 12> standing = {{
@@ -95,10 +107,14 @@ private:
     if (dt <= 0.0 || dt > 0.2) return;
 
     double vx, vy, wz;
+    bool use_z_target = false;
+    double z_target = z_;
     {
       std::lock_guard<std::mutex> lock(cmd_mutex_);
       vx = vx_cmd_; vy = vy_cmd_; wz = wz_cmd_;
       if ((sim_time - last_cmd_).Double() > cmd_timeout_) vx = vy = wz = 0.0;
+      use_z_target = have_z_target_ && (sim_time - last_z_target_).Double() <= cmd_timeout_;
+      z_target = z_target_;
     }
 
     const double c = std::cos(yaw_);
@@ -108,6 +124,9 @@ private:
     x_ += vx_world * dt;
     y_ += vy_world * dt;
     yaw_ = std::atan2(std::sin(yaw_ + wz * dt), std::cos(yaw_ + wz * dt));
+    const double old_z = z_;
+    if (use_z_target)
+      z_ += Clamp(z_target - z_, -max_vz_ * dt, max_vz_ * dt);
 
     model_->SetWorldPose(ignition::math::Pose3d(x_, y_, z_, 0.0, 0.0, yaw_));
     for (const auto &entry : standing_joints_)
@@ -115,10 +134,11 @@ private:
       entry.first->SetPosition(0, entry.second, true);
       entry.first->SetVelocity(0, 0.0);
     }
-    PublishPoses(sim_time, vx_world, vy_world, wz);
+    PublishPoses(sim_time, vx_world, vy_world, (z_ - old_z) / dt, wz);
   }
 
-  void PublishPoses(const common::Time &sim_time, double vx_world, double vy_world, double wz)
+  void PublishPoses(const common::Time &sim_time, double vx_world, double vy_world,
+                    double vz_world, double wz)
   {
     nav_msgs::Odometry body;
     body.header.stamp = ros::Time(sim_time.sec, sim_time.nsec);
@@ -130,6 +150,7 @@ private:
     body.pose.pose.orientation = tf::createQuaternionMsgFromYaw(yaw_);
     body.twist.twist.linear.x = vx_world;
     body.twist.twist.linear.y = vy_world;
+    body.twist.twist.linear.z = vz_world;
     body.twist.twist.angular.z = wz;
     body_pub_.publish(body);
 
@@ -154,14 +175,16 @@ private:
   physics::WorldPtr world_;
   event::ConnectionPtr update_connection_;
   std::unique_ptr<ros::NodeHandle> nh_;
-  ros::Subscriber cmd_sub_;
+  ros::Subscriber cmd_sub_, z_target_sub_;
   ros::Publisher body_pub_, lidar_pub_;
   tf::TransformBroadcaster tf_broadcaster_;
   std::mutex cmd_mutex_;
-  common::Time last_update_, last_cmd_;
+  common::Time last_update_, last_cmd_, last_z_target_;
   double x_ = 0.0, y_ = 0.0, z_ = 0.0, yaw_ = 0.0;
   double vx_cmd_ = 0.0, vy_cmd_ = 0.0, wz_cmd_ = 0.0;
   double max_vx_ = 0.8, max_vy_ = 0.5, max_vyaw_ = 1.0, cmd_timeout_ = 0.3;
+  double max_vz_ = 0.5, z_target_ = 0.0;
+  bool have_z_target_ = false;
   double lidar_x_ = 0.2, lidar_z_ = 0.2077;
   std::vector<std::pair<physics::JointPtr, double>> standing_joints_;
 };

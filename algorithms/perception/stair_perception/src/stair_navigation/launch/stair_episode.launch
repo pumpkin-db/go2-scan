@@ -1,0 +1,12 @@
+<launch>
+  <arg name="required_flights" default="2"/>
+  <arg name="auto_start" default="true"/>
+
+  <node pkg="stair_navigation" type="motion_arbiter_node.py" name="motion_arbiter" output="screen"/>
+  <node pkg="stair_navigation" type="stair_traverser_node.py" name="stair_traverser" output="screen">
+    <param name="required_flights" value="$(arg required_flights)"/>
+    <param name="auto_start" value="$(arg auto_start)"/>
+  </node>
+  <node pkg="stair_navigation" type="terrain_follow_sim_adapter.py"
+        name="terrain_follow_sim_adapter" output="screen"/>
+</launch>

@@ -61,6 +61,20 @@
 - 架构结论：P1 按既定验收完成；下楼不能依赖“到二层后重新直检坡面”，后续 manager 必须持久保存
   上楼时确认的 stair landmark/transition，供返程复用。下一步进入 P2 Standalone Stair Episode。
 
+### P2 Standalone Stair Episode tracer bullet（PARTIAL）
+
+- 新增 `stair_navigation`：bounded traverser（ACQUIRE/ALIGN/ASCEND/LANDING_SCAN/COMPLETE/FAIL）、
+  perception centerline follower、fail-closed motion arbiter、仅仿真的 terrain z adapter；全部输入来自
+  `StairTrack + body pose`，无 Depot registry/坐标/GT。`scan_enabled:=false` 可确保 P2 不启动 SCAN。
+- ModelPlugin 新增 `/sim/body_z_target` 输入及0.5m/s z slew，仍为唯一 pose writer；无新 target 时保持高度。
+  motion arbiter 对 nav/stair source 独占选择、0.3s timeout，失联输出零速。
+- 构建/测试：perception workspace 2包编译通过，共11项测试0失败；SCAN workspace ModelPlugin 编译通过；
+  P2 launch 节点表确认无 `scan_planner_node` 和 closed-loop controller。
+- Depot 实云短测：自动完成 `IDLE→ACQUIRE→ALIGN→ASCEND→LANDING_SCAN`，body z 从0.35升至2.97m，
+  第一 flight navigation-level PASS；landing 后无 confirmed next track，12s bounded timeout 后进入 FAILED 并停车。
+- 当前阻塞仅为 landing 的下一 flight 感知/重捕获，非 arbiter、运动或 z adapter。P2 尚未完成；下一步重放
+  landing 点云，确认是 current-floor reference 被前一段楼梯污染，还是下一 flight 实际不可见，再做单因修复。
+
 ## 2026-08-28（晚）：V2 重构启动——Real-Robot-First 审计（ZCode）
 
 - **P0 完成**：确认 `origin/debug/ariadne-baseline-20260828`（tip=7e94cad，含 37325bf e438 语义恢复）；v1 锚点 5797b4e 不在 baseline 内。本分支 `refactor/multifloor-realrobot-v2` 自 baseline 新建，零 v1 代码（v1 冻结在 feature 分支）。
