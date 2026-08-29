@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <vector>
 
 namespace stair_perception {
@@ -138,6 +139,21 @@ class TrackerNode {
         arrow.color.r = 1.0; arrow.color.g = 0.65;
       }
       markers.markers.push_back(arrow);
+
+      visualization_msgs::Marker label;
+      label.header = header;
+      label.ns = "stair_track_ids";
+      label.id = t.id;
+      label.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+      label.action = visualization_msgs::Marker::ADD;
+      label.pose.position = t.entry_pose.position;
+      label.pose.position.z += 0.55;
+      label.pose.orientation.w = 1.0;
+      label.scale.z = 0.28;
+      label.color.r = 1.0; label.color.g = 1.0; label.color.b = 1.0; label.color.a = 1.0;
+      label.text = "stair " + std::to_string(t.id) +
+                   (t.state == StairTrack::CONFIRMED ? " CONFIRMED" : " DETECTED");
+      markers.markers.push_back(label);
     }
     marker_pub_.publish(markers);
   }

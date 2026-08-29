@@ -35,6 +35,16 @@ TEST(DetectorCore, RejectsFlatGround) {
   EXPECT_TRUE(result.empty());
 }
 
+TEST(DetectorCore, RejectsVerticalWall) {
+  auto cloud = makeGround();
+  for (float y = -1.5F; y <= 1.5F; y += 0.05F)
+    for (float z = 0.0F; z <= 2.5F; z += 0.05F)
+      cloud->push_back(pcl::PointXYZ(3.0F, y, z));
+  stair_perception::DetectorCore detector;
+  const auto result = detector.detect(cloud, Eigen::Vector3f(0.0F, 0.0F, 0.35F));
+  EXPECT_TRUE(result.empty());
+}
+
 TEST(DetectorCore, DetectsSteppedFlight) {
   auto cloud = makeGround();
   addStaircase(cloud.get());

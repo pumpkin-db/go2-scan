@@ -29,6 +29,13 @@ frames instead of silently transforming data.
 - `/stair_perception/debug/support`: RANSAC support points
 - `/stair_perception/debug/candidates`, `/stair_perception/debug/tracks`: RViz markers
 
+Candidate markers include entry point, heading arrow, fitted plane, and support cloud; track
+markers include stable active-track ID and confirmation state.
+
+The mounted MID360 has only about 7 degrees downward field of view. A descending flight can
+be geometrically invisible from its upper landing. Higher-level multi-floor logic must retain
+a confirmed transition landmark observed from below instead of assuming re-detection from above.
+
 The legacy `go2_bridge/stair_detector.py` remains a simulation GT/elevation backend and must
 not run concurrently with this package under the same node name.
 

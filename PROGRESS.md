@@ -45,7 +45,7 @@
 - 当前限制：尚未接主 launch、尚未用 Depot 实际点云验证误报/漏报与 track 稳定性，故 P1 仍为 PARTIAL。
   下一步只做新旧 detector 隔离接线，并在 Depot 楼梯附近采集/验证 observation 与 RViz evidence。
 
-### P1 Depot 接线与实云验证（上楼方向 PASS）
+### P1 Depot 接线与实云验证（PASS）
 
 - 主 launch 的 `stair_detect:=true` 已切到无 GT `stair_perception` detector+tracker；旧
   registry/elevation 脚本改为显式 `stair_gt_backend:=true`，默认关闭。RViz 已接 candidate、track、support。
@@ -54,8 +54,12 @@
 - 首跑发现一个入口高于当前层约1.95m的稳定高层结构误检。根因：坡度/尺寸门限未验证候选连接当前
   支撑层。新增“两端至少一端接近当前地面层”门限；回归测试先失败后通过，实云候选由2降为1。
 - Depot 出生点负样本连续帧0候选；全包编译、3项 detector gtest、launch解析均通过。
-- 当前结论：P1 上楼方向 tracer bullet 可用；**下楼视角尚未实测**，不得据此启动 traverser。
-  下一步：从二层落脚区验证同一楼梯的下降侧检测与 track 语义，再决定 P1 是否完整完成。
+- P1 验收补齐：水平地面/垂直墙/悬空斜面拒绝测试均通过；RViz 已显示 supporting points、
+  fitted plane、entry、heading arrow、confirmed ID。实云 entry/heading/slope 多帧稳定，完全未使用 GT。
+- 二层下降侧实验确认物理可见性限制：MID360 向下视场仅约7°，主楼梯 ROI 沿真实下降坡面的回波为0；
+  点云只能看到护栏/高层结构。尝试扩大为双向 RANSAC 只产生假候选，已完整撤回。
+- 架构结论：P1 按既定验收完成；下楼不能依赖“到二层后重新直检坡面”，后续 manager 必须持久保存
+  上楼时确认的 stair landmark/transition，供返程复用。下一步进入 P2 Standalone Stair Episode。
 
 ## 2026-08-28（晚）：V2 重构启动——Real-Robot-First 审计（ZCode）
 

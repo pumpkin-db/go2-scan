@@ -9,6 +9,7 @@
 #include <stair_perception/StairObservation.h>
 #include <stair_perception/StairObservationArray.h>
 
+#include <cmath>
 #include <mutex>
 
 namespace stair_perception {
@@ -126,6 +127,43 @@ class DetectorNode {
       arrow.color.r = 0.1; arrow.color.g = 0.7; arrow.color.b = 1.0; arrow.color.a = 0.9;
       arrow.lifetime = ros::Duration(1.0);
       markers.markers.push_back(arrow);
+
+      visualization_msgs::Marker plane;
+      plane.header = header;
+      plane.ns = "stair_planes";
+      plane.id = marker_id++;
+      plane.type = visualization_msgs::Marker::CUBE;
+      plane.action = visualization_msgs::Marker::ADD;
+      plane.pose.position.x = 0.5 * (c.entry.x() + c.exit.x());
+      plane.pose.position.y = 0.5 * (c.entry.y() + c.exit.y());
+      plane.pose.position.z = 0.5 * (c.entry.z() + c.exit.z());
+      const double yaw = std::atan2(c.exit.y() - c.entry.y(), c.exit.x() - c.entry.x());
+      const double horizontal = std::hypot(c.exit.x() - c.entry.x(),
+                                           c.exit.y() - c.entry.y());
+      const double pitch = std::atan2(c.exit.z() - c.entry.z(), horizontal);
+      plane.pose.orientation.x = -std::sin(yaw * 0.5) * std::sin(pitch * 0.5);
+      plane.pose.orientation.y = std::cos(yaw * 0.5) * std::sin(pitch * 0.5);
+      plane.pose.orientation.z = std::sin(yaw * 0.5) * std::cos(pitch * 0.5);
+      plane.pose.orientation.w = std::cos(yaw * 0.5) * std::cos(pitch * 0.5);
+      plane.scale.x = std::hypot(horizontal, c.exit.z() - c.entry.z());
+      plane.scale.y = c.width;
+      plane.scale.z = 0.03;
+      plane.color.r = 0.1; plane.color.g = 0.6; plane.color.b = 1.0; plane.color.a = 0.25;
+      plane.lifetime = ros::Duration(1.0);
+      markers.markers.push_back(plane);
+
+      visualization_msgs::Marker entry;
+      entry.header = header;
+      entry.ns = "stair_entries";
+      entry.id = marker_id++;
+      entry.type = visualization_msgs::Marker::SPHERE;
+      entry.action = visualization_msgs::Marker::ADD;
+      entry.pose.position = a;
+      entry.pose.orientation.w = 1.0;
+      entry.scale.x = entry.scale.y = entry.scale.z = 0.20;
+      entry.color.r = 0.1; entry.color.g = 1.0; entry.color.b = 0.2; entry.color.a = 0.95;
+      entry.lifetime = ros::Duration(1.0);
+      markers.markers.push_back(entry);
     }
     observation_pub_.publish(array);
     marker_pub_.publish(markers);
