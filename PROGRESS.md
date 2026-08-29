@@ -6,6 +6,18 @@
 
 ## 2026-08-29：主线交接与 P0 资料审计
 
+### P2 Landing Next-Flight Reacquisition（Phase A PASS）
+
+- 保存并离线重放 landing 实云（`/mid360_points + body pose + tracks/state`）；新增 detector reject
+  diagnostics 与 `detector_replay` PCD 工具，不改变 P1 检测参数。
+- 根因确认：真实第二 flight（entry≈(14.2,1.5~1.8,3.4)、heading≈+Y、rise≈1.0~1.4m）在
+  landing 前已被多帧观测；旧 traverser 却按最近距离选中陈旧、与第一 flight 同向的 −Y track。
+- `LANDING_SCAN` 改为专用 switchback reacquire：只接受与上一 flight 折返≥120°、连接当前 landing、
+  观测新鲜且≥2帧/高置信的 track；NORMAL_SEARCH 仍要求 tracker `CONFIRMED`（3帧），行为不变。
+- 两次独立 Depot 回归均稳定选中 +Y 第二 flight（4帧与2帧），旧 −Y track 未再误选，均运行到当前
+  `COMPLETE`。Phase A PASS；P2 仍为 PARTIAL，因为下一步需加入独立 `EXIT_VERIFY` 多条件上层确认，
+  不能仅以 flight 数量 + landing timer 宣布完成。
+
 ### ARiADNE stable-baseline guard
 
 - Escape recovery / blocked-node 代码保留供实验，但稳定 e438-derived baseline 默认关闭：

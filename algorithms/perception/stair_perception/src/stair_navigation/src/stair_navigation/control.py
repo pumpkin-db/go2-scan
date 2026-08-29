@@ -9,6 +9,31 @@ def wrap(angle):
     return math.atan2(math.sin(angle), math.cos(angle))
 
 
+def landing_reacquire_score(previous_heading, candidate_heading, candidate_entry, robot_pose,
+                            candidate_rise, last_seen, landing_since, max_range=4.0,
+                            max_vertical=0.9, min_turn_deg=120.0,
+                            pre_landing_freshness=2.0, observation_count=3,
+                            min_observations=2, confidence=1.0, min_confidence=0.45):
+    """Return planar approach distance for a valid switchback flight, else None."""
+    if (last_seen < landing_since - pre_landing_freshness or candidate_rise <= 0.0 or
+            observation_count < min_observations or confidence < min_confidence):
+        return None
+    previous_norm = math.hypot(*previous_heading)
+    candidate_norm = math.hypot(*candidate_heading)
+    if previous_norm < 1e-6 or candidate_norm < 1e-6:
+        return None
+    cosine = ((previous_heading[0] * candidate_heading[0] +
+               previous_heading[1] * candidate_heading[1]) /
+              (previous_norm * candidate_norm))
+    turn = math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+    if turn < min_turn_deg:
+        return None
+    planar = math.hypot(candidate_entry[0] - robot_pose[0],
+                        candidate_entry[1] - robot_pose[1])
+    vertical = abs(candidate_entry[2] - robot_pose[2])
+    return planar if planar <= max_range and vertical <= max_vertical else None
+
+
 class MotionArbiterCore:
     def __init__(self, timeout=0.3):
         self.timeout = timeout

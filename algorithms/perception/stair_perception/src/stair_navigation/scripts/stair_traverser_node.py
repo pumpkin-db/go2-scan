@@ -6,7 +6,7 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool, String
 from stair_perception.msg import StairTrack, StairTrackArray
-from stair_navigation.control import CorridorFollower, clamp, wrap
+from stair_navigation.control import CorridorFollower, clamp, landing_reacquire_score, wrap
 
 
 class StairTraverser:
@@ -28,6 +28,9 @@ class StairTraverser:
         self.acquire_range = rospy.get_param('~acquire_range', 4.0)
         self.entry_tolerance = rospy.get_param('~entry_tolerance', 0.45)
         self.landing_scan_time = rospy.get_param('~landing_scan_time', 3.0)
+        self.landing_min_turn_deg = rospy.get_param('~landing_min_turn_deg', 120.0)
+        self.landing_confirm_observations = rospy.get_param('~landing_confirm_observations', 2)
+        self.landing_min_confidence = rospy.get_param('~landing_min_confidence', 0.45)
         self.max_episode_time = rospy.get_param('~max_episode_time', 120.0)
         self.follower = CorridorFollower(rospy.get_param('~forward_speed', 0.13))
         self.cmd_pub = rospy.Publisher('/cmd_vel_stair', Twist, queue_size=1)
@@ -78,6 +81,26 @@ class StairTraverser:
         self.used_ids.add(track.id)
         self.track_pub.publish(track)
         self.set_state(self.ACQUIRE)
+
+    def choose_landing_reacquire_track(self):
+        if self.pose is None or self.active_track is None:
+            return None
+        previous = (self.active_track.heading.x, self.active_track.heading.y)
+        robot = (self.pose.x, self.pose.y, self.pose.z)
+        choices = []
+        for track in self.tracks:
+            if track.id in self.used_ids:
+                continue
+            entry = track.entry_pose.position
+            score = landing_reacquire_score(
+                previous, (track.heading.x, track.heading.y), (entry.x, entry.y, entry.z), robot,
+                track.rise, track.last_seen.to_sec(), self.state_since.to_sec(),
+                self.acquire_range, 0.9, self.landing_min_turn_deg, 2.0,
+                track.observation_count, self.landing_confirm_observations,
+                track.confidence, self.landing_min_confidence)
+            if score is not None:
+                choices.append((score, track))
+        return min(choices, key=lambda item: item[0])[1] if choices else None
 
     def stop(self):
         self.cmd_pub.publish(Twist())
@@ -152,7 +175,7 @@ class StairTraverser:
             if self.flights >= self.required_flights:
                 self.set_state(self.COMPLETE)
                 return
-            next_track = self.choose_track()
+            next_track = self.choose_landing_reacquire_track()
             if next_track:
                 self.activate_track(next_track)
             elif elapsed > 12.0:

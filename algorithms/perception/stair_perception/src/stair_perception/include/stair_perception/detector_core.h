@@ -3,6 +3,7 @@
 #include <Eigen/Core>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <array>
 #include <vector>
 
 namespace stair_perception {
@@ -35,11 +36,50 @@ struct Candidate {
   pcl::PointCloud<pcl::PointXYZ>::Ptr support{new pcl::PointCloud<pcl::PointXYZ>};
 };
 
+enum class RejectReason {
+  SEARCH_SECTOR,
+  GROUND_CONNECTION,
+  RANSAC,
+  SLOPE,
+  WIDTH,
+  LENGTH,
+  RISE,
+  SUPPORT,
+  DUPLICATE,
+  COUNT
+};
+
+const char* rejectReasonName(RejectReason reason);
+
+struct RejectedCandidate {
+  RejectReason reason{RejectReason::RANSAC};
+  int sector{-1};
+  int attempt{-1};
+  float yaw{0.0F};
+  float slope_deg{0.0F};
+  float width{0.0F};
+  float length{0.0F};
+  float rise{0.0F};
+  float landing_gap{0.0F};
+  int support{0};
+};
+
+struct DetectionDiagnostics {
+  size_t local_points{0};
+  size_t filtered_points{0};
+  size_t near_ground_points{0};
+  float ground_z{0.0F};
+  bool ground_valid{false};
+  std::array<size_t, static_cast<size_t>(RejectReason::COUNT)> reject_counts{};
+  std::vector<RejectedCandidate> rejected;
+};
+
 class DetectorCore {
  public:
   explicit DetectorCore(DetectorParams params = DetectorParams());
   std::vector<Candidate> detect(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
-                                const Eigen::Vector3f& robot_position) const;
+                                const Eigen::Vector3f& robot_position,
+                                DetectionDiagnostics* diagnostics = nullptr) const;
 
  private:
   DetectorParams params_;

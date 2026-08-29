@@ -77,7 +77,23 @@ class DetectorNode {
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::fromROSMsg(*msg, *cloud);
-    const auto candidates = core_.detect(cloud, robot);
+    DetectionDiagnostics diagnostics;
+    const auto candidates = core_.detect(cloud, robot, &diagnostics);
+    if (candidates.empty() && diagnostics.ground_valid) {
+      ROS_INFO_THROTTLE(5.0,
+          "[stair_detector] no candidate ground_z=%.2f reject sector=%zu ground=%zu "
+          "ransac=%zu slope=%zu width=%zu length=%zu rise=%zu support=%zu duplicate=%zu",
+          diagnostics.ground_z,
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::SEARCH_SECTOR)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::GROUND_CONNECTION)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::RANSAC)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::SLOPE)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::WIDTH)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::LENGTH)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::RISE)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::SUPPORT)],
+          diagnostics.reject_counts[static_cast<size_t>(RejectReason::DUPLICATE)]);
+    }
     publish(msg->header, candidates);
   }
 

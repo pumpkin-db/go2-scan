@@ -2,7 +2,8 @@
 import math
 import unittest
 
-from stair_navigation.control import CorridorFollower, MotionArbiterCore, TerrainProfileCore
+from stair_navigation.control import (CorridorFollower, MotionArbiterCore, TerrainProfileCore,
+                                      landing_reacquire_score)
 
 
 class CoreTests(unittest.TestCase):
@@ -32,6 +33,30 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(values, sorted(values))
         self.assertAlmostEqual(values[0], 0.35)
         self.assertAlmostEqual(values[-1], 2.75)
+
+    def test_landing_reacquire_rejects_stale_same_direction_track(self):
+        score = landing_reacquire_score(
+            previous_heading=(0.0, -1.0), candidate_heading=(0.0, -1.0),
+            candidate_entry=(13.05, -0.15, 3.26), robot_pose=(12.53, 0.38, 2.95),
+            candidate_rise=1.87, last_seen=31.8, landing_since=34.3)
+        self.assertIsNone(score)
+
+    def test_landing_reacquire_accepts_fresh_switchback_track(self):
+        score = landing_reacquire_score(
+            previous_heading=(-0.10, -1.0), candidate_heading=(0.05, 1.0),
+            candidate_entry=(14.40, 1.82, 3.67), robot_pose=(12.53, 0.38, 2.95),
+            candidate_rise=1.03, last_seen=32.604, landing_since=34.0,
+            observation_count=2, confidence=0.63)
+        self.assertIsNotNone(score)
+        self.assertLess(score, 3.0)
+
+    def test_landing_reacquire_rejects_single_frame_candidate(self):
+        score = landing_reacquire_score(
+            previous_heading=(0.0, -1.0), candidate_heading=(0.0, 1.0),
+            candidate_entry=(14.2, 1.5, 3.5), robot_pose=(12.5, 0.3, 3.0),
+            candidate_rise=1.2, last_seen=33.5, landing_since=34.0,
+            observation_count=1, confidence=0.9)
+        self.assertIsNone(score)
 
 
 if __name__ == '__main__':
