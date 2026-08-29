@@ -4,6 +4,52 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-29（深夜）：Depot 白膜专项——诊断穷尽 + Classic 资产重建仍未解决，按用户指示挂起
+
+**结论：白膜=纯视觉问题，任务功能链（LiDAR/碰撞/规划/评分）完全不受影响。用户拍板停止，现场已恢复基线
+（depot.world→model://Depot、model.sdf 回提交态），知识/工具留档待后续裁决。**
+
+### 实验确立的事实链（全部有实测证据）
+
+1. **实际渲染来源 = DAE 内嵌材质**（ColladaLoader 加载的 mesh 自带 effect）；SDF `<script>`/`<pbr>`
+   层对 submesh 最终渲染**零影响**——三轮独立实验（换 script 材质名 / 删 pbr / 删整个 script 块回
+   Scene 原版相对路径）均无任何视觉变化。
+2. **渲染管线本身能工作**：内嵌材质引用同目录自制 256² 棋盘纹理 → 洋红/绿棋盘正常上墙（canary 实验），
+   证明该 visual 的 UV0 有效、effect 结构兼容。
+3. **客户端日志零纹理错误**：带 GUI 完整跑一次，60 张官方 2048² 贴图全部静默通过 Ogre 加载，唯一材质类
+   警告 = `ColladaLoader: emission texture not supported` ×6（Classic 不支持自发光贴图，无害）。
+4. **官方 binding 链 XML 审计干净**：Depot.dae 15 geometry + Crates.dae 1 geometry，primitive symbol ↔
+   instance_material ↔ target ↔ effect ↔ diffuse image 一一对应，无 unbound/missing。
+5. **按裁决重建的完整 Classic 资产仍白**：`tools/build_depot_classic_mesh.py` 重建 images/effects/
+   materials（每材质仅 lambert diffuse=官方 Albedo、显式 CLASSIC_XXX 绑定、同目录 textures/、无 Maya
+   extra/emission/blend_mode）、`tools/verify_depot_classic_asset.py` 静态验收全绿（geometry/primitive
+   数一致、数据指纹一致、四张空列表）→ **用户验收：依旧白膜**。
+
+### 已排除（不要再查）
+
+GAZEBO_MODEL_PATH/资源路径（model://、`../` 父目录、同目录三种全试过）；贴图文件损坏（zlib 全量解码
+成功）；16-bit PNG（全 8-bit）；贴图近纯白（均值 44~178）；UV 退化（15 submesh 0% 退化，范围正常）；
+PNG 结构异常（标准块结构）；binding 链断裂（审计干净）；SDF 材质层（被证明无效）。
+
+### 悬而未解
+
+- **唯一没做的单变量**：同目录 + 官方 WALLS_Albedo 降采样重编码（如 256²/512² 单 IDAT）——自制 256²
+  可渲染 vs 官方 2048² 不可渲染，**尺寸/编码是最后嫌疑**（但客户端日志显示加载零错误，指向渲染采样段）。
+- WSLg/D3D12 环境的 GL 上限（GL_MAX_TEXTURE_SIZE、实际渲染器字符串）从未测过——gzclient 日志里连
+  renderer 信息都没有。
+- "部分部位有纹理（如外墙）"的精确 submesh 映射未做（13 色 canary 扫描被裁决跳过）。
+
+### 留档工具（可一键重建实验现场）
+
+- `tools/build_depot_classic_mesh.py`：官方 DAE → Classic 简化 DAE + 纹理同目录化
+- `tools/verify_depot_classic_asset.py`：Classic 资产八项静态验收
+- 实验产物（DepotClassicTest/DepotClassic/depot_classic.material）已清理，需要时由工具重建
+
+### 候选后续（等 GPT/用户裁决，当前不执行）
+
+① 官方 Albedo 降采样重编码单变量实验（最后嫌疑）② Blender/Assimp 重导出重建绑定（原第十步 fallback）
+③ 测 WSLg 环境 GL 渲染器与纹理上限 ④ 长期：迁移新 Gazebo（PBR 原生）。
+
 ## 2026-08-29：腿部显示最终定案——Gazebo 固定 / RViz 动画（Track A1 闭环，用户裁决）
 
 分支 `fix/gazebo-go2-visuals-20260829`（基于 `debug/ariadne-baseline-20260828`，已推 origin）。
