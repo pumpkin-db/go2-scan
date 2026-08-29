@@ -25,16 +25,11 @@
   <gazebo reference="base">
     <kinematic>true</kinematic>
   </gazebo>
-  <gazebo>
-    <plugin name="go2_kinematic_model" filename="libgo2_kinematic_model_plugin.so">
-      <cmdTimeout>0.3</cmdTimeout>
-      <maxVx>0.8</maxVx>
-      <maxVy>0.5</maxVy>
-      <maxVyaw>1.0</maxVyaw>
-      <lidarX>0.2</lidarX>
-      <lidarZ>0.2077</lidarZ>
-    </plugin>
-  </gazebo>
+  <!-- 2026-08-29（Track A1）：移除 go2_kinematic_model ModelPlugin，恢复 e438e07 之前
+       的 plant（kinematic_sim + gazebo_bridge + gait_publisher 三件套，见
+       gazebo_sim.launch 第2节）：bridge 按 /joint_states 步态角经
+       set_model_configuration 驱动 Gazebo 腿，Gazebo 内腿部可见摆动。
+       ModelPlugin 版本把关节每 tick 钉死站姿，导致 Gazebo 腿始终静止。 -->
   <link name="Head_upper">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
