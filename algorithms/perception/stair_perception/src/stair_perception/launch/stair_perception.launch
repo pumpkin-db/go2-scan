@@ -1,0 +1,14 @@
+<launch>
+  <!-- Both simulation and FAST-LIO provide world-frame registered clouds. -->
+  <arg name="cloud_topic" default="/mid360_points"/>
+  <arg name="pose_topic" default="/quad_0/body_pose"/>
+  <arg name="max_range" default="7.0"/>
+
+  <node pkg="stair_perception" type="stair_detector_node" name="stair_detector" output="screen">
+    <param name="cloud_topic" value="$(arg cloud_topic)"/>
+    <param name="pose_topic" value="$(arg pose_topic)"/>
+    <param name="max_range" value="$(arg max_range)"/>
+    <param name="max_rate" value="2.0"/>
+  </node>
+  <node pkg="stair_perception" type="stair_tracker_node" name="stair_tracker" output="screen"/>
+</launch>

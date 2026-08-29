@@ -4,6 +4,47 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-29：主线交接与 P0 资料审计
+
+- 完整阅读 `CODEX-MASTER-HANDOFF.md`、本文件、`ZCODE_RUNBOOK.md`、真机交接资料及附件；
+  当前开发分支切换为 `refactor/multifloor-realrobot-v2`（基于稳定 tip `7e94cad`）。
+- 真机契约确认：定位 `/Odometry`、世界系点云 `/cloud_registered`、最终运动后端复用已验证的
+  `cmd_vel_bridge → SportClient::Move/StopMove`；核心算法不得依赖 Gazebo topic/frame/GT。
+- KAIST 资料与冻结架构无结构性冲突：论文/解读支持 LiDAR+VoxelGrid+RANSAC 坡面检测、楼梯延后通过、
+  单一状态管理器和墙面引导；其“pitch≈0 即到新楼层”过弱，项目继续采用 landing scan + 多证据退出判定。
+- 现有 V2 审计确认 SCAN mode3 `/initial_path` 保留动态 XYZ，适合作为普通地面/楼梯接近接口；真正
+  stair traversal 第一版仍由独立 traverser 接管，不把楼梯逻辑塞入 SCAN 或 ModelPlugin。
+- 本轮未改功能代码、未运行仿真。下一步：完成当前 topic/TF/adaptor 的最小运行时审计后，进入 P1
+  `stair_detector + stair_tracker + RViz debug`，输入只用规范化点云与位姿，禁止 GT。
+
+### P0 运行时接口复核
+
+- Depot headless 短跑确认：`/mid360_points`=`sensor_msgs/PointCloud2`、`frame_id=world`，唯一发布者
+  `/gazebo`；`/quad_0/body_pose`=`nav_msgs/Odometry`、`frame_id=world`、`child_frame_id=base`，唯一发布者
+  `/gazebo`。因此 P1 核心可统一接收“世界系 PointCloud2 + Odometry”；真机仅把输入换成
+  `/cloud_registered + /Odometry`，无需依赖 Gazebo TF/消息。
+- 现有 `integration/go2_bridge/scripts/stair_detector.py` 依赖 2.5D elevation map、JSON 输出、无多帧
+  tracker，且可混入 Depot registry GT；裁决为 simulation GT backend，不能继续充当正式 Stair Perception。
+- 运行时发现两个待隔离风险：Depot `env.sh` 的附加参数会覆盖命令行 `stair_detect:=false`，强制启动旧
+  registry detector；TF 出现大量 `TF_REPEATED_DATA`，短测中 `tf_echo world base` 未稳定建立。
+  P1 不依赖该 TF，但正式 launch 接入前需修清所有权/开关。
+- 下一步唯一动作：建立独立、无 GT 的 `stair_perception` 包，先交付 PointCloud+Odometry candidate detector、
+  多帧 tracker、标准消息与 RViz evidence；用合成点云单测后再接 Depot。
+
+### P1 Stair Perception tracer bullet（PARTIAL）
+
+- 新建独立 workspace `algorithms/perception/stair_perception`，核心只接收同一重力对齐世界帧下的
+  PointCloud2 + Odometry；默认仿真 `/mid360_points + /quad_0/body_pose`，真机可直接切换
+  `/cloud_registered + /Odometry`，无 Gazebo/Depot/elevation map/控制依赖。
+- detector 已实现：局部 ROI、VoxelGrid、扇区 corridor、PCL RANSAC 平面、15°~45°坡度、宽度/长度/
+  rise/支持点与置信度门限、候选去重；发布标准 `StairObservationArray`、support cloud 与 RViz arrow。
+- tracker 已实现：entry/heading/slope 关联、几何滑动融合、三帧确认、超时清理；发布
+  `StairTrackArray` 与确认状态 RViz marker。旧 JSON/registry 脚本未修改、未接入新链。
+- 验证：全包 `catkin_make` 通过；`roslaunch --nodes` 正确解析 detector+tracker；合成测试
+  `RejectsFlatGround` 与 `DetectsSteppedFlight` 均通过（0 failures）。
+- 当前限制：尚未接主 launch、尚未用 Depot 实际点云验证误报/漏报与 track 稳定性，故 P1 仍为 PARTIAL。
+  下一步只做新旧 detector 隔离接线，并在 Depot 楼梯附近采集/验证 observation 与 RViz evidence。
+
 ## 2026-08-28（晚）：V2 重构启动——Real-Robot-First 审计（ZCode）
 
 - **P0 完成**：确认 `origin/debug/ariadne-baseline-20260828`（tip=7e94cad，含 37325bf e438 语义恢复）；v1 锚点 5797b4e 不在 baseline 内。本分支 `refactor/multifloor-realrobot-v2` 自 baseline 新建，零 v1 代码（v1 冻结在 feature 分支）。
