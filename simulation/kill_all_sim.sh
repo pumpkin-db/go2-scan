@@ -12,6 +12,7 @@ for pat in scan_planner_node go2_kinematic_sim closed_loop_controller \
            gazebo_bridge.py cloud_range_filter.py scan_cloud_accumulator.py \
            octomap_server sensorScanGeneration rl_planner.py ariadne_goal_bridge.py \
            elevation_mapping map_pub odom_visualization go2_gait_publisher \
+           stair_detector stair_tracker stair_gt_backend \
            robot_state_publisher realTimePlot visualizationTools tare_bridge.py \
            tare_planner_node navigation_boundary_publisher.py tare_goal_bridge.py; do
   pkill -9 -f "$pat" 2>/dev/null

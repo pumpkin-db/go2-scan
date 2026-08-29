@@ -21,6 +21,7 @@ SCAN=$HOME/claude/raicom/go2-scan/algorithms/local_planning/scan_planner
 ELEV=$HOME/claude/raicom/go2-scan/algorithms/mapping/elevation_mapping
 TARE=$HOME/claude/raicom/go2-scan/algorithms/global_planning/tare
 BRIDGE=$HOME/claude/raicom/go2-scan/integration
+STAIR_PERCEPTION=$HOME/claude/raicom/go2-scan/algorithms/perception/stair_perception
 
 # 2) source ROS + SCAN-Planner（注意：不能 source ELEV/TARE，catkin setup 会挤掉 SCAN 的 CMAKE_PREFIX_PATH）
 source /opt/ros/noetic/setup.bash
@@ -50,6 +51,11 @@ export ROS_PACKAGE_PATH=$ARIADNE/src:$ROS_PACKAGE_PATH
 # 6) go2_bridge（自研胶水，纯 Python，rospack 直指 integration/）
 export ROS_PACKAGE_PATH=$BRIDGE:$ROS_PACKAGE_PATH
 
+# 6a) 可移植楼梯感知（独立 catkin workspace；仿真/实机共用同一核心）
+export CMAKE_PREFIX_PATH=$STAIR_PERCEPTION/devel:$CMAKE_PREFIX_PATH
+export LD_LIBRARY_PATH=$STAIR_PERCEPTION/devel/lib:$LD_LIBRARY_PATH
+export ROS_PACKAGE_PATH=$STAIR_PERCEPTION/src:$ROS_PACKAGE_PATH
+
 # 6b) 场景支持：scene:=<name> 时 source scenes/<name>/env.sh（世界/GT/出生点/model路径）
 SCENE=""
 REST_ARGS=()
@@ -75,4 +81,5 @@ fi
 # 7) 启动（场景自带高程配置时覆盖 cfg_dir）
 ELEV_ARGS=()
 [ -n "${ELEV_CFG_DIR:-}" ] && ELEV_ARGS+=(cfg_dir:="$ELEV_CFG_DIR")
-roslaunch scan_planner gazebo_sim.launch "${REST_ARGS[@]}" "${EXTRA_ARGS[@]}" "${ELEV_ARGS[@]}"
+# 显式命令行参数最后传入，允许测试时覆盖场景默认值。
+roslaunch scan_planner gazebo_sim.launch "${EXTRA_ARGS[@]}" "${ELEV_ARGS[@]}" "${REST_ARGS[@]}"

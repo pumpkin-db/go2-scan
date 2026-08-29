@@ -45,6 +45,18 @@
 - 当前限制：尚未接主 launch、尚未用 Depot 实际点云验证误报/漏报与 track 稳定性，故 P1 仍为 PARTIAL。
   下一步只做新旧 detector 隔离接线，并在 Depot 楼梯附近采集/验证 observation 与 RViz evidence。
 
+### P1 Depot 接线与实云验证（上楼方向 PASS）
+
+- 主 launch 的 `stair_detect:=true` 已切到无 GT `stair_perception` detector+tracker；旧
+  registry/elevation 脚本改为显式 `stair_gt_backend:=true`，默认关闭。RViz 已接 candidate、track、support。
+- Depot 主楼梯前（12.87, 4.5）实云稳定检出唯一主候选：entry≈(12.78,2.97,0.69)、
+  heading≈(−0.10,−1.00)、rise≈2.79m、confidence≈0.95；21帧后 track confirmed。
+- 首跑发现一个入口高于当前层约1.95m的稳定高层结构误检。根因：坡度/尺寸门限未验证候选连接当前
+  支撑层。新增“两端至少一端接近当前地面层”门限；回归测试先失败后通过，实云候选由2降为1。
+- Depot 出生点负样本连续帧0候选；全包编译、3项 detector gtest、launch解析均通过。
+- 当前结论：P1 上楼方向 tracer bullet 可用；**下楼视角尚未实测**，不得据此启动 traverser。
+  下一步：从二层落脚区验证同一楼梯的下降侧检测与 track 语义，再决定 P1 是否完整完成。
+
 ## 2026-08-28（晚）：V2 重构启动——Real-Robot-First 审计（ZCode）
 
 - **P0 完成**：确认 `origin/debug/ariadne-baseline-20260828`（tip=7e94cad，含 37325bf e438 语义恢复）；v1 锚点 5797b4e 不在 baseline 内。本分支 `refactor/multifloor-realrobot-v2` 自 baseline 新建，零 v1 代码（v1 冻结在 feature 分支）。

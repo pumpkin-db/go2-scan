@@ -40,6 +40,8 @@ class DetectorNode {
     pnh_.param("max_width", p.max_width, p.max_width);
     pnh_.param("min_length", p.min_length, p.min_length);
     pnh_.param("min_rise", p.min_rise, p.min_rise);
+    pnh_.param("max_landing_height_gap", p.max_landing_height_gap,
+               p.max_landing_height_gap);
     pnh_.param("corridor_half_width", p.corridor_half_width, p.corridor_half_width);
     pnh_.param("ransac_distance", p.ransac_distance, p.ransac_distance);
     pnh_.param("min_support", p.min_support, p.min_support);

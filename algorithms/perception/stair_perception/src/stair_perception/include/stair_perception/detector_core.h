@@ -17,6 +17,7 @@ struct DetectorParams {
   double max_width{3.0};
   double min_length{0.8};
   double min_rise{0.35};
+  double max_landing_height_gap{0.9};
   double corridor_half_width{0.8};
   double ransac_distance{0.12};
   int min_support{30};

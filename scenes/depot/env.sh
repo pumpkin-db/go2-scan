@@ -15,6 +15,6 @@ GAZEBO_MODEL_PATH=$GO2/scenes/depot/model:${GAZEBO_MODEL_PATH:-}
 # 早年「全白」根因：转换时 script uri 写成相对路径，经典 Gazebo 解析不了。
 # 多层场景开地形跟随（kinematic_sim z 查高程图）。
 # 数据源用场景 GT 高程二进制（干净无天花板，2026-08-27；感知高程图楼梯区不可用）
-# stair_detect:=true：Depot 自动起楼梯检测（注册表兜底橙箭头，见 gazebo_sim.launch 8c）
+# stair_detect:=true：Depot 自动起无 GT 点云楼梯感知；旧 GT backend 默认关闭。
 SCENE_EXTRA_ARGS="terrain_follow:=true terrain_source:=gt_file gt_elev_file:=$GO2/scenes/depot/gt/elev_gt.bin stair_detect:=true"
 export SCENE_WORLD SCENE_GT SPAWN_X SPAWN_Y SPAWN_Z SPAWN_YAW GAZEBO_MODEL_PATH SCENE_EXTRA_ARGS

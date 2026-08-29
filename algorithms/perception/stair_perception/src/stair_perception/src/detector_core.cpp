@@ -148,6 +148,9 @@ std::vector<Candidate> DetectorCore::detect(
           candidate.exit = center + heading * max_along;
           candidate.entry.z() = planeHeight(plane, candidate.entry.x(), candidate.entry.y());
           candidate.exit.z() = planeHeight(plane, candidate.exit.x(), candidate.exit.y());
+          const float landing_gap = std::min(std::abs(candidate.entry.z() - ground_z),
+                                             std::abs(candidate.exit.z() - ground_z));
+          if (landing_gap > params_.max_landing_height_gap) break;
           candidate.heading = heading;
           candidate.slope = slope;
           candidate.width = width;

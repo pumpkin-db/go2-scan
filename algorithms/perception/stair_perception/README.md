@@ -31,3 +31,6 @@ frames instead of silently transforming data.
 
 The legacy `go2_bridge/stair_detector.py` remains a simulation GT/elevation backend and must
 not run concurrently with this package under the same node name.
+
+Main simulation launch uses `stair_detect:=true` for this package. The legacy backend is
+available only through explicit `stair_gt_backend:=true` and is disabled by default.
