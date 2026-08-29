@@ -4,6 +4,14 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-28（晚）：V2 重构启动——Real-Robot-First 审计（ZCode）
+
+- **P0 完成**：确认 `origin/debug/ariadne-baseline-20260828`（tip=7e94cad，含 37325bf e438 语义恢复）；v1 锚点 5797b4e 不在 baseline 内。本分支 `refactor/multifloor-realrobot-v2` 自 baseline 新建，零 v1 代码（v1 冻结在 feature 分支）。
+- **SCAN 审计**（与上游 348e8a5 blob 级 diff）：我们的 vendored 改动=纯诊断+仿真 plant，规划核心零偏离。mode2=keypoint.yaml init 固定序列（官方机制，无运行时接口）；mode3=/initial_path 运行时动态 3D 多点路线（官方 TravExplorer 用法）；楼梯无专用逻辑=抬高参考路径 z。**裁决：mode3 为 V2 正式接口**，Test A/B 待跑。
+- **Unitree 审计**（sdk2 main clone）：SportClient 无楼梯/步态切换公开接口（Move/StopMove/SpeedLevel 即全部；gait_type 仅在底层 IDL 未文档化）；cmd_vel→Move 映射天然匹配。
+- **v1 处置**：ModelPlugin 楼梯锁/zprof/位置钳制 + stair_mission_manager.py 全删；STOP_REASON/floor_reset 思想选择性移植；新增 StairTransition.msg / multifloor_manager / transition_planner / motion_safety_filter / floor_session 抽象。
+- 详细报告：`docs/V2_ARCHITECTURE_AUDIT.md`。等 GPT 对架构裁决后开写 V2。
+
 ## 2026-08-28：fatal 未复现 + 逐 replan 监测落地（ZCode 执行）
 
 - **结论：073402 报告的 fatal（436s 起点判障碍急停）在干净重建二进制上未复现**。
