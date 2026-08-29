@@ -4,6 +4,42 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-29：腿部显示最终定案——Gazebo 固定 / RViz 动画（Track A1 闭环，用户裁决）
+
+分支 `fix/gazebo-go2-visuals-20260829`（基于 `debug/ariadne-baseline-20260828`，已推 origin）。
+
+### 最终状态（用户拍板，后续勿再动）
+
+- **Gazebo 里：腿固定不摆**。`go2_kinematic_model` ModelPlugin 在每个 WorldUpdateEnd 把
+  12 个腿关节 SetPosition+SetVelocity 钉死在站姿（FL(0.05,0.82,-1.58)/FR(-0.05,0.82,-1.58)/
+  RL(0.05,0.95,-1.62)/RR(-0.05,0.95,-1.62)），base 为 kinematic。腿不参与动力学、行走时
+  不摆动——**设计如此**：真机不依赖 Gazebo 腿动力学，腿只是视觉。
+- **RViz 里：正常 = TF 完整 + 行走摆动动画**。链路：`go2_gait_publisher`（60Hz
+  /joint_states；速度>0.05m/s 发对角 trot 摆动相位，静止回固定站姿）→ robot_state_publisher
+  → 全身 44 link TF。**与 Gazebo 显示完全独立**：/joint_states 在 Gazebo 侧没有任何消费者。
+- 两边站姿数值三处同源：spawn `-J` 参数 ≡ ModelPlugin `CacheStandingJoints` ≡
+  gait_publisher `publishStance`，改任何一处必须三处同步。
+
+### 根因链（本次修了什么）
+
+1. **71f4442** RViz 全腿报 "No transform to [world]" 根因 = 主栈无任何 /joint_states 发布者
+   （c33cedd 把 go2_gait_publisher 移出主栈时丢失；ModelPlugin 只钉 Gazebo 关节、不广播
+   ROS 话题）→ RSP 拿不到 12 个 revolute 腿关节角 → 44 link 缺 41。修复：新增
+   `tools/verify_tf_complete.py` 自动验收（实测修复前 3/44 → 修复后 44/44，
+   missing_tf_links=[]）+ `go2_joint_state_publisher.py`（fallback，未接入 launch）。
+2. **cf0cbfd** 主栈恢复 `go2_gait_publisher`（上游 vendor a845c4a 即有，c33cedd 移除）→
+   RViz 行走动画恢复，用户确认正常。
+3. **7a2985c / bc96b21** 按用户指示实验历史旧 plant（kinematic_sim+gazebo_bridge 三件套、
+   a845c4a 动力学 base）；**2bf137d 整版 worktree 原样构建实测**——全部被用户否决
+   （历史各版本均无法复现记忆中的 Gazebo 腿状态），worktree 已删。
+4. **1e322d4** 最终回退：URDF+launch 与 cf0cbfd 净差异为零，即上文"最终状态"。
+
+### 硬约束（历史教训）
+
+- 禁止把 /joint_states 接入 `set_model_configuration` 链路驱动 Gazebo 腿（3263672 时代
+  30Hz service 传送 + 物理失重腿 = 乱飞根源）；Gazebo 关节唯一写入者 = ModelPlugin。
+- livox 雷达不可回退（Depot 全盲事故）；velodyne world-frame 输出为当前契约。
+
 ## 2026-08-28：fatal 未复现 + 逐 replan 监测落地（ZCode 执行）
 
 - **结论：073402 报告的 fatal（436s 起点判障碍急停）在干净重建二进制上未复现**。
