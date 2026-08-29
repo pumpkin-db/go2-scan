@@ -6,12 +6,14 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool, String
 from stair_perception.msg import StairTrack, StairTrackArray
-from stair_navigation.control import CorridorFollower, clamp, landing_reacquire_score, wrap
+from stair_navigation.control import (CorridorFollower, ExitVerifier, clamp,
+                                      landing_reacquire_score, wrap)
 
 
 class StairTraverser:
-    IDLE, ACQUIRE, ALIGN, ASCEND, LANDING_SCAN, COMPLETE, FAILED = range(7)
-    NAMES = ['IDLE', 'ACQUIRE', 'ALIGN', 'ASCEND', 'LANDING_SCAN', 'COMPLETE', 'FAILED']
+    IDLE, ACQUIRE, ALIGN, ASCEND, LANDING_SCAN, EXIT_VERIFY, COMPLETE, FAILED = range(8)
+    NAMES = ['IDLE', 'ACQUIRE', 'ALIGN', 'ASCEND', 'LANDING_SCAN', 'EXIT_VERIFY',
+             'COMPLETE', 'FAILED']
 
     def __init__(self):
         self.pose = None
@@ -22,6 +24,9 @@ class StairTraverser:
         self.state = self.IDLE
         self.state_since = rospy.Time.now()
         self.episode_since = None
+        self.episode_start_z = None
+        self.expected_rise = 0.0
+        self.exit_verifier = None
         self.flights = 0
         self.required_flights = rospy.get_param('~required_flights', 2)
         self.auto_start = rospy.get_param('~auto_start', True)
@@ -31,6 +36,8 @@ class StairTraverser:
         self.landing_min_turn_deg = rospy.get_param('~landing_min_turn_deg', 120.0)
         self.landing_confirm_observations = rospy.get_param('~landing_confirm_observations', 2)
         self.landing_min_confidence = rospy.get_param('~landing_min_confidence', 0.45)
+        self.exit_verify_timeout = rospy.get_param('~exit_verify_timeout', 8.0)
+        self.pose_timeout = rospy.get_param('~pose_timeout', 0.5)
         self.max_episode_time = rospy.get_param('~max_episode_time', 120.0)
         self.follower = CorridorFollower(rospy.get_param('~forward_speed', 0.13))
         self.cmd_pub = rospy.Publisher('/cmd_vel_stair', Twist, queue_size=1)
@@ -45,6 +52,7 @@ class StairTraverser:
 
     def pose_cb(self, msg):
         self.pose = msg.pose.pose.position
+        self.pose_seen_at = rospy.Time.now()
         q = msg.pose.pose.orientation
         self.yaw = tf.transformations.euler_from_quaternion((q.x, q.y, q.z, q.w))[2]
 
@@ -79,6 +87,7 @@ class StairTraverser:
     def activate_track(self, track):
         self.active_track = track
         self.used_ids.add(track.id)
+        self.expected_rise += max(0.0, track.rise)
         self.track_pub.publish(track)
         self.set_state(self.ACQUIRE)
 
@@ -115,6 +124,10 @@ class StairTraverser:
         if self.pose is None:
             self.stop()
             return
+        if (self.state not in (self.IDLE, self.COMPLETE, self.FAILED) and
+                (now - self.pose_seen_at).to_sec() > self.pose_timeout):
+            self.fail('localization timeout')
+            return
         if self.episode_since and (now - self.episode_since).to_sec() > self.max_episode_time:
             self.fail('episode timeout')
             return
@@ -123,6 +136,8 @@ class StairTraverser:
             track = self.choose_track() if self.auto_start else None
             if track:
                 self.episode_since = now
+                self.episode_start_z = self.pose.z
+                self.expected_rise = 0.0
                 self.activate_track(track)
             return
         if self.state in (self.COMPLETE, self.FAILED):
@@ -173,13 +188,26 @@ class StairTraverser:
             if elapsed < self.landing_scan_time:
                 return
             if self.flights >= self.required_flights:
-                self.set_state(self.COMPLETE)
+                entry = self.active_track.entry_pose.position
+                exit_ = self.active_track.exit_pose.position
+                self.exit_verifier = ExitVerifier(
+                    self.episode_start_z, self.expected_rise,
+                    (entry.x, entry.y), (exit_.x, exit_.y))
+                self.set_state(self.EXIT_VERIFY)
                 return
             next_track = self.choose_landing_reacquire_track()
             if next_track:
                 self.activate_track(next_track)
             elif elapsed > 12.0:
                 self.fail('next flight not found')
+            return
+        elif self.state == self.EXIT_VERIFY:
+            self.stop()
+            self.exit_verifier.update(now.to_sec(), (self.pose.x, self.pose.y, self.pose.z))
+            if self.exit_verifier.ready(now.to_sec(), self.state_since.to_sec()):
+                self.set_state(self.COMPLETE)
+            elif elapsed > self.exit_verify_timeout:
+                self.fail('upper floor exit verification timeout')
             return
         self.cmd_pub.publish(cmd)
 

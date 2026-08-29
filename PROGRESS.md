@@ -18,6 +18,18 @@
   `COMPLETE`。Phase A PASS；P2 仍为 PARTIAL，因为下一步需加入独立 `EXIT_VERIFY` 多条件上层确认，
   不能仅以 flight 数量 + landing timer 宣布完成。
 
+### P2 Standalone Stair Episode（Navigation-Level PASS）
+
+- 新增独立 `EXIT_VERIFY`：第二 flight 后同时验证 perceived-track 累计高度增益、末段几何进度、
+  1s 的 z/xy 停稳窗口和持续定位；8s 内证据不足则 fail-closed，不再按 flight 数+定时器假完成。
+- active episode 增加 0.5s localization timeout；丢失 pose 立即 FAILED/零速。速度所有权仍只有
+  `stair_traverser → motion_arbiter → /cmd_vel`，ModelPlugin 仍为唯一 pose writer。
+- 两次独立 Depot 全流程回归均通过：`first flight → LANDING_SCAN → +Y second flight →
+  LANDING_SCAN → EXIT_VERIFY → COMPLETE`，无 FAIL；第二次 EXIT_VERIFY 70.55~72.55s，最终
+  pose≈(14.43,2.78,4.22)。裁决：P2 Navigation-Level PASS；不代表 Real Go2 Stair Locomotion PASS。
+- 下一步进入 P3：用 SCAN 抵达 perceived stair staging pose，停止后 reverify，再经 arbiter 交权给
+  已验证的完整 stair episode；不修改 SCAN planner core。
+
 ### ARiADNE stable-baseline guard
 
 - Escape recovery / blocked-node 代码保留供实验，但稳定 e438-derived baseline 默认关闭：

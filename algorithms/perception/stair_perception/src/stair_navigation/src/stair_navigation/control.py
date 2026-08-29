@@ -1,4 +1,5 @@
 import math
+from collections import deque
 
 
 def clamp(value, limit):
@@ -32,6 +33,48 @@ def landing_reacquire_score(previous_heading, candidate_heading, candidate_entry
                         candidate_entry[1] - robot_pose[1])
     vertical = abs(candidate_entry[2] - robot_pose[2])
     return planar if planar <= max_range and vertical <= max_vertical else None
+
+
+class ExitVerifier:
+    def __init__(self, episode_start_z, expected_rise, final_entry, final_exit,
+                 min_height_ratio=0.75, progress_tolerance=0.30,
+                 stability_window=1.0, max_z_span=0.08, max_xy_span=0.08,
+                 settle_time=2.0):
+        self.episode_start_z = episode_start_z
+        self.expected_rise = expected_rise
+        self.final_entry = final_entry
+        self.heading, self.length = CorridorFollower.geometry(final_entry, final_exit)
+        self.min_height_ratio = min_height_ratio
+        self.progress_tolerance = progress_tolerance
+        self.stability_window = stability_window
+        self.max_z_span = max_z_span
+        self.max_xy_span = max_xy_span
+        self.settle_time = settle_time
+        self.samples = deque()
+
+    def update(self, stamp, position):
+        self.samples.append((stamp, position))
+        cutoff = stamp - self.stability_window
+        while self.samples and self.samples[0][0] < cutoff:
+            self.samples.popleft()
+
+    def ready(self, now, started_at):
+        if now - started_at < self.settle_time or len(self.samples) < 2:
+            return False
+        if self.samples[-1][0] - self.samples[0][0] < 0.8 * self.stability_window:
+            return False
+        latest = self.samples[-1][1]
+        height_gain = latest[2] - self.episode_start_z
+        if height_gain < self.min_height_ratio * self.expected_rise:
+            return False
+        progress = CorridorFollower().progress(latest[:2], self.final_entry, self.heading)
+        if progress < self.length - self.progress_tolerance:
+            return False
+        xs = [sample[1][0] for sample in self.samples]
+        ys = [sample[1][1] for sample in self.samples]
+        zs = [sample[1][2] for sample in self.samples]
+        return (math.hypot(max(xs) - min(xs), max(ys) - min(ys)) <= self.max_xy_span and
+                max(zs) - min(zs) <= self.max_z_span)
 
 
 class MotionArbiterCore:

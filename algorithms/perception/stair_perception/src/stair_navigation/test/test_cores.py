@@ -3,7 +3,7 @@ import math
 import unittest
 
 from stair_navigation.control import (CorridorFollower, MotionArbiterCore, TerrainProfileCore,
-                                      landing_reacquire_score)
+                                      ExitVerifier, landing_reacquire_score)
 
 
 class CoreTests(unittest.TestCase):
@@ -57,6 +57,20 @@ class CoreTests(unittest.TestCase):
             candidate_rise=1.2, last_seen=33.5, landing_since=34.0,
             observation_count=1, confidence=0.9)
         self.assertIsNone(score)
+
+    def test_exit_verifier_requires_height_progress_and_stability(self):
+        verifier = ExitVerifier(episode_start_z=0.35, expected_rise=4.0,
+                                final_entry=(14.2, 1.5), final_exit=(14.3, 2.9))
+        for i in range(11):
+            verifier.update(10.0 + 0.1 * i, (14.29, 2.75, 3.95 + 0.002 * (i % 2)))
+        self.assertTrue(verifier.ready(11.0, 9.0))
+
+    def test_exit_verifier_rejects_unsettled_or_insufficient_height(self):
+        verifier = ExitVerifier(episode_start_z=0.35, expected_rise=4.0,
+                                final_entry=(14.2, 1.5), final_exit=(14.3, 2.9))
+        for i in range(11):
+            verifier.update(10.0 + 0.1 * i, (14.29, 2.75, 2.0 + 0.1 * i))
+        self.assertFalse(verifier.ready(11.0, 9.0))
 
 
 if __name__ == '__main__':
