@@ -124,7 +124,15 @@
   </node>
 
   <!-- 8. RViz（GPU 硬件渲染：WSL2 的 OpenGL 走 D3D12 直通 NVIDIA，无需软件渲染） -->
-  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default.rviz"/>
+  <!-- RViz config 按 multi_floor 实参选择：单层看 /projected_map（原基线），
+         multi-floor 看 /active_floor_map（floor-aware 主地图）。
+         注：roslaunch 的 node args 属性不支持 $(eval)，故用 group if/unless。 -->
+  <group if="$(eval rviz and multi_floor)">
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default_multifloor.rviz"/>
+  </group>
+  <group if="$(eval rviz and not multi_floor)">
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find scan_planner)/launch/default.rviz"/>
+  </group>
 
   <!-- 8b. 实时评分显示（2026-08-27）：增量 ER/路径/用时 → /live_score 文本 Marker，
        default.rviz 已加显示组。默认跟随 rviz 开关（无头跑分不起，零行为变化）。
