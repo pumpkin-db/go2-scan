@@ -21,11 +21,17 @@
   stair episode/approach。Motion Arbiter 未改，仍为唯一 `/cmd_vel` publisher。
 - smoke 暴露 P4 与 ARiADNE 重复启动 `map→world TF + sensorScanGeneration`；已改为 multi-floor 时复用
   ARiADNE 转换链，active-floor 侧只保留 OctoMap。P4 standalone 默认链不变；launch 解析确认无重复节点。
-- 验证：39 tests、0 failure；Python compile、launch解析、参数检查通过（map=`/active_floor_map`、escape=false、
-  utility=0.5、approach auto-start=false）；短 Depot smoke 确认节点启动、active map 发布且 ARiADNE/Supervisor
-  均订阅、`/cmd_vel` 唯一 publisher=`/motion_arbiter`。修复重复转换链后未再跑完整 smoke/长闭环。
-- 裁决：P5 PARTIAL。下一步唯一动作：重跑修复后的 Depot 集成，先确认 ARiADNE floor0 从 STARTING→
-  EXPLORING，再完成 floor0 COMPLETE→双 flight→floor1 session/新 waypoint 端到端验收。
+- Depot 回归确认 `STARTING` 只是状态 topic 陈旧：首帧 pose 已完成 Agent/NodeManager 初始化，但回调未重发
+  status；初始化后立即发布状态，已验证 `STARTING→EXPLORING`，floor=0/session=1，并正常产生 waypoint、
+  自主移动。`/cmd_vel` 唯一 publisher 仍为 `/motion_arbiter`。
+- 两次自然运行均完成 `EXPLORING→COMPLETE→PAUSE_EXPLORER→STAIR_APPROACH`；旧探索 target 已失效，
+  floor/session 未污染。但都在 SCAN staging 超时，尚未启动 stair episode/floor handoff/floor1 session。
+  首次 SCAN 将 nominal staging `(12.85,3.06)` 因占据调整到约 `(11.97,3.38)`，机器人安全停在调整点，
+  approach 仍等待 nominal 点。第二次选中 track entry z=1.08m（body z≈0.35m）的 base-disconnected/partial
+  mission 后同样失败；“按 rise 优先选 track”实验无改善，已撤销，未保留猜测性修复。
+- 验证：39 tests、0 failure；Python compile、diff check通过。裁决：P5 PARTIAL。最高证据 blocker 是持久
+  stair catalog/P3 mission 的 floor-connection 与 free-staging 契约不足，非 ARiADNE readiness。下一步只应
+  先保证选中的 canonical mission 与当前层相连且 nominal staging 可导航，再重跑端到端；不改 SCAN core。
 
 ## 2026-08-29：主线交接与 P0 资料审计
 

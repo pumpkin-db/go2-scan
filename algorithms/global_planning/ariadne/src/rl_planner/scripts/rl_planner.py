@@ -194,6 +194,8 @@ class Runner:
             self.robot.node_manager = NodeManager(self.start)
             print("initialize quad tree at", self.start)
             print("initialize robot location at", self.robot_location)
+            if hasattr(self, 'status_pub'):
+                self.publish_status()
         self.robot_cell = get_cell_position_from_coords(self.robot_location, self.map_info)
 
     def waypoint_wrapper(self, loc):
