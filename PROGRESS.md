@@ -4,6 +4,31 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-30：P5.3 floor-aware Z 冷回归（PARTIAL：未触达 floor1）
+
+- Git preflight 通过：`refactor/multifloor-realrobot-v2` @ `186a224`；仅保留 P5.2 的 bridge 与本文档候选修改。
+- 静态语义确认：`/floor_context/z_ref` 由稳定 body z 减 body height 得到，代表楼层地面；bridge 发布
+  Path `z=z_ref`，SCAN 再加 `body_height=0.4`；floor0 默认 `z_ref=0` 向后兼容。
+- 唯一一次 Depot 冷启动正常完成 floor0 探索并进入 `STAIR_APPROACH`，accepted staging
+  `(14.09,-1.30,0.00)`，机器人到达约 `(14.09,-1.35,0.35)` 后进入 REVERIFY；随后因
+  `stair reverify timeout` 在 sim 157.20 s 进入 `FAILED`，未启动 Stair Episode、未触达 floor1/session2。
+- 本轮失败发生在已通过但具有运行波动的 P3 reverify，早于待验证 Z 链；未修改 P1--P4.5，不能据此判定
+  floor-aware Z 候选无效。P5 继续标记 PARTIAL；下一步仍是一次能通过 REVERIFY 的 Depot 冷回归，验证
+  floor1 `path.z=z_ref`、SCAN `end_pt.z=z_ref+0.4` 及水平位移至少 0.2 m。
+
+## 2026-08-30：P5.2 floor1 waypoint→motion 断点（根因确认；修复待 E2E 验证）
+
+- 旧 P5.1 回归日志完成逐跳审计：session2 `/way_point` YES → `ariadne_goal_bridge` YES →
+  fresh `/initial_path` YES → SCAN `pathCallback` YES；`/stair_episode/active` 与 handoff 均已释放。
+- 第一个断点在 SCAN 局部规划。根因不是 lifecycle latch，而是 bridge 始终发布 Path `z=0`；SCAN 再加
+  `body_height=0.4`，导致 floor1 机器人 `z=5.12` 时目标仍为 `z=0.4`。证据：`SCAN_DIAG end_pt=[12,0,0.400]`，
+  随后 `drone is in obstacle`、首控制点占据、连续 1000 次 A* fail，最终 EMERGENCY_STOP。
+- 最小候选修复：`ariadne_goal_bridge` 订阅 latched `/floor_context/z_ref`，当前 Path 两点 z 统一使用楼层地面
+  z_ref；SCAN 加 body height 后目标处于当前楼层。无 Floor Manager 时默认 0，单层语义不变。
+- Python compile、`git diff --check` 通过。15 分钟限制内未完成新冷启动至 floor1，故 P5 仍为 PARTIAL，
+  修复未 commit/push。下一步唯一动作：完整 Depot 冷回归，确认 floor1 end_pt z≈z_ref+0.4、
+  `/cmd_vel_nav→/cmd_vel` 非零及水平位移≥0.2m，再标 P5 PASS。
+
 ## 2026-08-30：P5.1 Safe Approach Goal（staging blocker PASS；P5 E2E PARTIAL）
 
 - 目标：分离 persistent stair geometry 与 current executable ApproachGoal，建立唯一

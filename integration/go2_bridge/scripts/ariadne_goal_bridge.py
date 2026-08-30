@@ -8,7 +8,7 @@ follower 导航。本机用 SCAN-Planner navi_mode=3 替代 follower：
 由此推出四条接口纪律（源码依据见 scan_replan_fsm.cpp pathCallback）：
   1. Path 只需两点 [当前位置, 航点]——SCAN 对稀疏路径自动插中间点
   2. poses[0] 必须是轨迹起点（SCAN 把首点当 trajectory start）
-  3. z 发 0（SCAN 内部自动 +body_height）
+  3. z 发当前楼层地面 z_ref（SCAN 内部自动 +body_height）
   4. 必须去重：way_point 以固定频率重复发布同一目标，
      不去重会反复触发 SCAN 整体重规划
 frame_id 用 world（SCAN 全局系；数值与 map 恒等，由 map→world 静态 TF 桥保证）。
@@ -17,13 +17,16 @@ frame_id 用 world（SCAN 全局系；数值与 map 恒等，由 map→world 静
 import rospy
 from geometry_msgs.msg import PointStamped, PoseStamped
 from nav_msgs.msg import Odometry, Path
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float64
 
 
 class WaypointBridge(object):
     def __init__(self):
         self.repub_dist = float(rospy.get_param('~repub_dist', 1.0))
         self.robot_xy = None
+        # SCAN adds its configured body_height to every /initial_path pose.
+        # Therefore Path.z must be current floor ground z, not always zero.
+        self.floor_z_ref = 0.0
         self.last_sent = None
         self.paused = False
         # latch 不开：latch 会让迟连接的订阅者收到旧 Path 触发意外重规划
@@ -31,6 +34,7 @@ class WaypointBridge(object):
         self.valid_pub = rospy.Publisher('/ariadne/bridge/target_valid', Bool,
                                          queue_size=1, latch=True)
         rospy.Subscriber('/quad_0/body_pose', Odometry, self.odom_cb, queue_size=1)
+        rospy.Subscriber('/floor_context/z_ref', Float64, self.floor_z_cb, queue_size=1)
         rospy.Subscriber('/way_point', PointStamped, self.waypoint_cb, queue_size=1)
         rospy.Subscriber('/ariadne/lifecycle/pause', Bool, self.pause_cb, queue_size=1)
         rospy.Subscriber('/ariadne/lifecycle/reset_for_floor', Bool, self.reset_cb, queue_size=1)
@@ -39,6 +43,9 @@ class WaypointBridge(object):
     def odom_cb(self, msg):
         p = msg.pose.pose.position
         self.robot_xy = (p.x, p.y)
+
+    def floor_z_cb(self, msg):
+        self.floor_z_ref = msg.data
 
     def pause_cb(self, msg):
         self.paused = msg.data
@@ -70,6 +77,7 @@ class WaypointBridge(object):
             ps.header.frame_id = 'world'
             ps.pose.position.x = x
             ps.pose.position.y = y
+            ps.pose.position.z = self.floor_z_ref
             ps.pose.orientation.w = 1.0
             path.poses.append(ps)
         self.path_pub.publish(path)
