@@ -6,6 +6,23 @@
 
 ## 2026-08-29：主线交接与 P0 资料审计
 
+### P3 SCAN Stair Approach（WIP checkpoint，未验收）
+
+- 已实现最小接近/交权链：confirmed stair track → 水平地面 staging pose → SCAN mode3
+  `/initial_path` → 到达并停稳 → fresh geometry REVERIFY → `/stair_episode/start_track`；approach manager
+  不发布速度，运行时确认 `/motion_arbiter` 仍是唯一最终 `/cmd_vel` writer。
+- 修复 terminal ownership：`COMPLETE/FAILED` 后 stair owner 保持零速，避免旧 SCAN 目标重新接管并倒车；
+  后续必须由 floor handoff/lifecycle 显式释放。
+- P3 曾完整运行到 `COMPLETE`，但重复回归发现 tracker 会把接近后看到的局部坡面持续平均进完整 track，
+  导致 flight entry/exit/rise 逐帧缩短；曾出现第一 flight rise≈2.9→2.1m、第二 flight 仅≈0.83m，
+  traverser 因错误 exit 提前 landing/complete。该运行属于假成功，P3 **不得标 PASS**。
+- 候选修复已写入：普通 partial observation 不再缩短既有 extent；更长 extent 需 confidence≥0.45
+  且两帧几何一致才允许扩张；单帧异常长观测不能污染 track。新增 shrink/双帧扩张/单帧污染单测。
+- checkpoint 验证：perception workspace 编译通过，`catkin_test_results` 共25项、0失败；尚未完成修复后
+  Depot 全流程重复运行。因此当前仅为可恢复 WIP checkpoint，不代表 P3 Navigation-Level PASS。
+- 下一步唯一动作：保持配置不变重复两次 P3，确认两段 flight extent 稳定、完整 episode 成功、terminal
+  持续零速且只有一个 `/cmd_vel` writer；全部满足后再更新为 P3 PASS 并进入 floor handoff。
+
 ### P2 Landing Next-Flight Reacquisition（Phase A PASS）
 
 - 保存并离线重放 landing 实云（`/mid360_points + body pose + tracks/state`）；新增 detector reject

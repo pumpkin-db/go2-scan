@@ -48,6 +48,11 @@ if(CATKIN_ENABLE_TESTING)
     add_dependencies(test_detector ${${PROJECT_NAME}_EXPORTED_TARGETS})
     target_link_libraries(test_detector stair_detector_core ${catkin_LIBRARIES} ${PCL_LIBRARIES})
   endif()
+  catkin_add_gtest(test_tracker test/test_tracker.cpp)
+  if(TARGET test_tracker)
+    add_dependencies(test_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS})
+    target_link_libraries(test_tracker ${catkin_LIBRARIES})
+  endif()
 endif()
 
 install(TARGETS stair_detector_core stair_detector_node detector_replay stair_tracker_node

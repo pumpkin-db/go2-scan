@@ -13,7 +13,9 @@
        驱动（=1 等外部单点目标、=2 吃 scan_planner/tools/keypoint.yaml 预设航点），
        无决策核发目标时狗静止等待遥控/预设航点。 -->
   <arg name="global_planner" default="tare"/>
-  <arg name="navi_mode_eff" value="$(eval '3' if global_planner == 'ariadne' else navi_mode)"/>
+  <arg name="stair_episode" default="false"/>
+  <arg name="stair_approach" default="false"/>
+  <arg name="navi_mode_eff" value="$(eval '3' if global_planner == 'ariadne' or stair_approach else navi_mode)"/>
   <!-- 2026-08-26 两分支统一吃近距过滤云（原 tare 分支直吃原云已作废）：
        velodyne 360° 下视射线含狗体自回波，tare 首跑实证 grid_map 起点被自占
        阻塞 → A* 全败（bspline_optimizer.cpp:146 "a star error" 刷屏）→
@@ -65,7 +67,9 @@
   <arg name="remote_drive" default="false"/>
   <arg name="scan_enabled" default="true"/>
   <arg name="closed_loop_enabled" value="$(eval scan_enabled and not remote_drive)"/>
-  <node if="$(arg closed_loop_enabled)" pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
+  <node if="$(arg closed_loop_enabled)" pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen">
+    <remap if="$(arg stair_episode)" from="cmd_vel" to="/cmd_vel_nav"/>
+  </node>
 
   <!-- 4. SCAN-Planner 主算法（mid360 点云已是世界系 -> cloud_is_world=true，免 sensor_pose 变换）
        点云源：两分支统一吃近距过滤后的 /mid360_points_clean（见顶部 scan_cloud 注释，
@@ -135,8 +139,10 @@
   </node>
 
   <!-- P2 standalone stair episode: no ARiADNE/SCAN; bounded traverser owns motion via arbiter. -->
-  <arg name="stair_episode" default="false"/>
-  <include if="$(arg stair_episode)" file="$(find stair_navigation)/launch/stair_episode.launch"/>
+  <include if="$(arg stair_episode)" file="$(find stair_navigation)/launch/stair_episode.launch">
+    <arg name="auto_start" value="$(eval not stair_approach)"/>
+    <arg name="approach_enabled" value="$(arg stair_approach)"/>
+  </include>
 
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策）
        cfg_dir 可被场景覆盖（Depot 等场景窗口中心与 indoor_1 不同） -->

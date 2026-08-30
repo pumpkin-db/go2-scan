@@ -7,6 +7,7 @@ catkin_package(CATKIN_DEPENDS geometry_msgs nav_msgs rospy stair_perception std_
 
 catkin_install_python(PROGRAMS
   scripts/motion_arbiter_node.py
+  scripts/stair_approach_node.py
   scripts/stair_traverser_node.py
   scripts/terrain_follow_sim_adapter.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})

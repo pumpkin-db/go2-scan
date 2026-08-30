@@ -3,7 +3,8 @@ import math
 import unittest
 
 from stair_navigation.control import (CorridorFollower, MotionArbiterCore, TerrainProfileCore,
-                                      ExitVerifier, landing_reacquire_score)
+                                      ExitVerifier, compute_staging, landing_reacquire_score,
+                                      same_track_geometry, stair_state_owns_control)
 
 
 class CoreTests(unittest.TestCase):
@@ -71,6 +72,20 @@ class CoreTests(unittest.TestCase):
         for i in range(11):
             verifier.update(10.0 + 0.1 * i, (14.29, 2.75, 2.0 + 0.1 * i))
         self.assertFalse(verifier.ready(11.0, 9.0))
+
+    def test_staging_is_behind_entry_on_horizontal_floor(self):
+        self.assertEqual(compute_staging((12.8, 3.0), (0.0, -1.0), 1.0), (12.8, 4.0))
+
+    def test_reverify_matches_geometry_not_track_id(self):
+        self.assertTrue(same_track_geometry((12.8, 3.0), (0.0, -1.0),
+                                            (12.9, 3.1), (-0.1, -1.0)))
+        self.assertFalse(same_track_geometry((12.8, 3.0), (0.0, -1.0),
+                                             (14.2, 1.5), (0.0, 1.0)))
+
+    def test_stair_keeps_control_after_terminal_state(self):
+        self.assertFalse(stair_state_owns_control('IDLE'))
+        self.assertTrue(stair_state_owns_control('COMPLETE'))
+        self.assertTrue(stair_state_owns_control('FAILED'))
 
 
 if __name__ == '__main__':

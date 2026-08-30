@@ -7,7 +7,7 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool, String
 from stair_perception.msg import StairTrack, StairTrackArray
 from stair_navigation.control import (CorridorFollower, ExitVerifier, clamp,
-                                      landing_reacquire_score, wrap)
+                                      landing_reacquire_score, stair_state_owns_control, wrap)
 
 
 class StairTraverser:
@@ -27,6 +27,7 @@ class StairTraverser:
         self.episode_start_z = None
         self.expected_rise = 0.0
         self.exit_verifier = None
+        self.requested_track = None
         self.flights = 0
         self.required_flights = rospy.get_param('~required_flights', 2)
         self.auto_start = rospy.get_param('~auto_start', True)
@@ -47,6 +48,7 @@ class StairTraverser:
                                          queue_size=1, latch=True)
         rospy.Subscriber('/quad_0/body_pose', Odometry, self.pose_cb, queue_size=1)
         rospy.Subscriber('/stair_perception/tracks', StairTrackArray, self.tracks_cb, queue_size=1)
+        rospy.Subscriber('/stair_episode/start_track', StairTrack, self.start_track_cb, queue_size=1)
         rospy.Timer(rospy.Duration(0.05), self.tick)
         self.publish_state()
 
@@ -59,6 +61,10 @@ class StairTraverser:
     def tracks_cb(self, msg):
         self.tracks = list(msg.tracks)
 
+    def start_track_cb(self, msg):
+        if self.state == self.IDLE and not self.auto_start:
+            self.requested_track = msg
+
     def set_state(self, state):
         self.state = state
         self.state_since = rospy.Time.now()
@@ -66,7 +72,7 @@ class StairTraverser:
         rospy.loginfo('[stair_traverser] state=%s flights=%d', self.NAMES[state], self.flights)
 
     def publish_state(self):
-        active = self.state not in (self.IDLE, self.COMPLETE)
+        active = stair_state_owns_control(self.NAMES[self.state])
         self.active_pub.publish(Bool(active))
         self.state_pub.publish(String(self.NAMES[self.state]))
 
@@ -133,8 +139,9 @@ class StairTraverser:
             return
         if self.state == self.IDLE:
             self.stop()
-            track = self.choose_track() if self.auto_start else None
+            track = self.choose_track() if self.auto_start else self.requested_track
             if track:
+                self.requested_track = None
                 self.episode_since = now
                 self.episode_start_z = self.pose.z
                 self.expected_rise = 0.0

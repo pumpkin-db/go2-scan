@@ -10,6 +10,32 @@ def wrap(angle):
     return math.atan2(math.sin(angle), math.cos(angle))
 
 
+def compute_staging(entry, heading, distance):
+    norm = math.hypot(*heading)
+    if norm < 1e-6:
+        raise ValueError('degenerate stair heading')
+    return (entry[0] - distance * heading[0] / norm,
+            entry[1] - distance * heading[1] / norm)
+
+
+def same_track_geometry(reference_entry, reference_heading, candidate_entry, candidate_heading,
+                        max_entry_distance=0.8, max_heading_deg=25.0):
+    if math.hypot(candidate_entry[0] - reference_entry[0],
+                  candidate_entry[1] - reference_entry[1]) > max_entry_distance:
+        return False
+    rn, cn = math.hypot(*reference_heading), math.hypot(*candidate_heading)
+    if rn < 1e-6 or cn < 1e-6:
+        return False
+    cosine = ((reference_heading[0] * candidate_heading[0] +
+               reference_heading[1] * candidate_heading[1]) / (rn * cn))
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine)))) <= max_heading_deg
+
+
+def stair_state_owns_control(state_name):
+    # COMPLETE/FAILED remain fail-closed until a later lifecycle owner explicitly releases them.
+    return state_name != 'IDLE'
+
+
 def landing_reacquire_score(previous_heading, candidate_heading, candidate_entry, robot_pose,
                             candidate_rise, last_seen, landing_since, max_range=4.0,
                             max_vertical=0.9, min_turn_deg=120.0,

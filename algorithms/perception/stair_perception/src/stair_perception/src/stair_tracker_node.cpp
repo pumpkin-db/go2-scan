@@ -4,10 +4,12 @@
 #include <stair_perception/StairObservationArray.h>
 #include <stair_perception/StairTrack.h>
 #include <stair_perception/StairTrackArray.h>
+#include "stair_perception/tracker_core.h"
 
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace stair_perception {
@@ -54,26 +56,6 @@ class TrackerNode {
     return best;
   }
 
-  static void blend(double alpha, const StairObservation& o, StairTrack* t) {
-    auto mix = [alpha](double old_value, double new_value) {
-      return (1.0 - alpha) * old_value + alpha * new_value;
-    };
-    t->entry_pose.position.x = mix(t->entry_pose.position.x, o.entry_pose.position.x);
-    t->entry_pose.position.y = mix(t->entry_pose.position.y, o.entry_pose.position.y);
-    t->entry_pose.position.z = mix(t->entry_pose.position.z, o.entry_pose.position.z);
-    t->exit_pose.position.x = mix(t->exit_pose.position.x, o.exit_pose.position.x);
-    t->exit_pose.position.y = mix(t->exit_pose.position.y, o.exit_pose.position.y);
-    t->exit_pose.position.z = mix(t->exit_pose.position.z, o.exit_pose.position.z);
-    t->heading.x = mix(t->heading.x, o.heading.x);
-    t->heading.y = mix(t->heading.y, o.heading.y);
-    const double norm = std::hypot(t->heading.x, t->heading.y);
-    if (norm > 1e-6) { t->heading.x /= norm; t->heading.y /= norm; }
-    t->slope = mix(t->slope, o.slope);
-    t->width = mix(t->width, o.width);
-    t->rise = mix(t->rise, o.rise);
-    t->confidence = mix(t->confidence, o.confidence);
-  }
-
   void observationCallback(const StairObservationArray::ConstPtr& msg) {
     const ros::Time now = msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
     tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(), [&](const StairTrack& t) {
@@ -99,7 +81,8 @@ class TrackerNode {
         tracks_.push_back(t);
       } else {
         auto& t = tracks_[match];
-        blend(1.0 / std::min(5U, t.observation_count + 1), o, &t);
+        fuseObservation(1.0 / std::min(5U, t.observation_count + 1), o, &t);
+        considerExtent(o, &t, &extent_proposals_[t.id]);
         ++t.observation_count;
         t.last_seen = now;
         t.header = msg->header;
@@ -162,6 +145,7 @@ class TrackerNode {
   ros::Subscriber observation_sub_;
   ros::Publisher track_pub_, marker_pub_;
   std::vector<StairTrack> tracks_;
+  std::unordered_map<uint32_t, ExtentProposal> extent_proposals_;
   uint32_t next_id_{1};
   double association_distance_{1.0};
   double association_heading_deg_{25.0};
