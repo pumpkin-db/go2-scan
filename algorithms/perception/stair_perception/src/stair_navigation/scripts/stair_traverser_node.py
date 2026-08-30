@@ -7,7 +7,8 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool, String
 from stair_perception.msg import StairTrack, StairTrackArray
 from stair_navigation.control import (CorridorFollower, ExitVerifier, clamp,
-                                      landing_reacquire_score, stair_state_owns_control, wrap)
+                                      landing_reacquire_score, mission_extent_expands,
+                                      stair_state_owns_control, wrap)
 
 
 class StairTraverser:
@@ -97,6 +98,26 @@ class StairTraverser:
         self.track_pub.publish(track)
         self.set_state(self.ACQUIRE)
 
+    def refresh_mission_snapshot(self):
+        """Allow canonical growth before motion starts; ASCEND freezes mission geometry."""
+        if self.active_track is None or self.state not in (self.ACQUIRE, self.ALIGN):
+            return
+        old = self.active_track
+        old_entry, old_exit = old.entry_pose.position, old.exit_pose.position
+        for candidate in self.tracks:
+            if candidate.id != old.id or candidate.state != StairTrack.CONFIRMED:
+                continue
+            entry, exit_ = candidate.entry_pose.position, candidate.exit_pose.position
+            if mission_extent_expands(
+                    (old_entry.x, old_entry.y), (old_exit.x, old_exit.y), old.rise,
+                    (entry.x, entry.y), (exit_.x, exit_.y), candidate.rise):
+                self.expected_rise += max(0.0, candidate.rise - old.rise)
+                self.active_track = candidate
+                self.track_pub.publish(candidate)
+                rospy.loginfo('[stair_traverser] mission extent expanded track=%d rise=%.2f->%.2f',
+                              candidate.id, old.rise, candidate.rise)
+            return
+
     def choose_landing_reacquire_track(self):
         if self.pose is None or self.active_track is None:
             return None
@@ -150,6 +171,8 @@ class StairTraverser:
         if self.state in (self.COMPLETE, self.FAILED):
             self.stop()
             return
+
+        self.refresh_mission_snapshot()
 
         entry = self.active_track.entry_pose.position if self.active_track else None
         exit_ = self.active_track.exit_pose.position if self.active_track else None

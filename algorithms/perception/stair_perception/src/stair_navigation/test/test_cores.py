@@ -4,7 +4,8 @@ import unittest
 
 from stair_navigation.control import (CorridorFollower, MotionArbiterCore, TerrainProfileCore,
                                       ExitVerifier, compute_staging, landing_reacquire_score,
-                                      same_track_geometry, stair_state_owns_control)
+                                      mission_extent_expands, same_track_geometry,
+                                      stair_state_owns_control)
 
 
 class CoreTests(unittest.TestCase):
@@ -81,6 +82,13 @@ class CoreTests(unittest.TestCase):
                                             (12.9, 3.1), (-0.1, -1.0)))
         self.assertFalse(same_track_geometry((12.8, 3.0), (0.0, -1.0),
                                              (14.2, 1.5), (0.0, 1.0)))
+
+    def test_mission_snapshot_accepts_only_monotonic_canonical_expansion(self):
+        current = ((12.75, 2.81), (12.62, 1.06), 1.74)
+        expanded = ((12.86, 2.81), (12.76, 0.39), 2.41)
+        partial = ((12.70, 2.20), (12.65, 1.10), 1.10)
+        self.assertTrue(mission_extent_expands(*current, *expanded))
+        self.assertFalse(mission_extent_expands(*current, *partial))
 
     def test_stair_keeps_control_after_terminal_state(self):
         self.assertFalse(stair_state_owns_control('IDLE'))

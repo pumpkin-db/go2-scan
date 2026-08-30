@@ -31,6 +31,21 @@ def same_track_geometry(reference_entry, reference_heading, candidate_entry, can
     return math.degrees(math.acos(max(-1.0, min(1.0, cosine)))) <= max_heading_deg
 
 
+def mission_extent_expands(current_entry, current_exit, current_rise,
+                           candidate_entry, candidate_exit, candidate_rise,
+                           tolerance=0.05):
+    """Accept tracker-validated canonical growth; never shrink a selected mission."""
+    current_heading, current_length = CorridorFollower.geometry(current_entry, current_exit)
+    candidate_heading, candidate_length = CorridorFollower.geometry(candidate_entry, candidate_exit)
+    if not same_track_geometry(current_entry, current_heading,
+                               candidate_entry, candidate_heading):
+        return False
+    if candidate_length < current_length - tolerance or candidate_rise < current_rise - tolerance:
+        return False
+    return (candidate_length > current_length + tolerance or
+            candidate_rise > current_rise + tolerance)
+
+
 def stair_state_owns_control(state_name):
     # COMPLETE/FAILED remain fail-closed until a later lifecycle owner explicitly releases them.
     return state_name != 'IDLE'

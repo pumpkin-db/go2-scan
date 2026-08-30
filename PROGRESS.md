@@ -6,22 +6,24 @@
 
 ## 2026-08-29：主线交接与 P0 资料审计
 
-### P3 SCAN Stair Approach（WIP checkpoint，未验收）
+### P3 SCAN Stair Approach（Navigation-Level PASS）
 
 - 已实现最小接近/交权链：confirmed stair track → 水平地面 staging pose → SCAN mode3
   `/initial_path` → 到达并停稳 → fresh geometry REVERIFY → `/stair_episode/start_track`；approach manager
   不发布速度，运行时确认 `/motion_arbiter` 仍是唯一最终 `/cmd_vel` writer。
 - 修复 terminal ownership：`COMPLETE/FAILED` 后 stair owner 保持零速，避免旧 SCAN 目标重新接管并倒车；
   后续必须由 floor handoff/lifecycle 显式释放。
-- P3 曾完整运行到 `COMPLETE`，但重复回归发现 tracker 会把接近后看到的局部坡面持续平均进完整 track，
-  导致 flight entry/exit/rise 逐帧缩短；曾出现第一 flight rise≈2.9→2.1m、第二 flight 仅≈0.83m，
-  traverser 因错误 exit 提前 landing/complete。该运行属于假成功，P3 **不得标 PASS**。
-- 候选修复已写入：普通 partial observation 不再缩短既有 extent；更长 extent 需 confidence≥0.45
-  且两帧几何一致才允许扩张；单帧异常长观测不能污染 track。新增 shrink/双帧扩张/单帧污染单测。
-- checkpoint 验证：perception workspace 编译通过，`catkin_test_results` 共25项、0失败；尚未完成修复后
-  Depot 全流程重复运行。因此当前仅为可恢复 WIP checkpoint，不代表 P3 Navigation-Level PASS。
-- 下一步唯一动作：保持配置不变重复两次 P3，确认两段 flight extent 稳定、完整 episode 成功、terminal
-  持续零速且只有一个 `/cmd_vel` writer；全部满足后再更新为 P3 PASS 并进入 floor handoff。
+- 假成功根因分为两层：tracker 曾把 instantaneous partial view 融入 canonical extent 并缩短 flight；修复后
+  canonical 只允许两帧一致的高置信观测扩张、永不被 partial view 缩短。回归又发现 traverser 在 canonical
+  扩张完成前冻结 mission snapshot；首次验证快照 rise=1.74m、同 ID 随后扩张到2.41m，导致提前 landing。
+- 执行层最小修复：`ACQUIRE/ALIGN` 可吸收 tracker 已确认的同 ID canonical 单调扩张并重发 active track；
+  进入 `ASCEND` 后冻结 mission geometry。partial/shrink/conflict observation 仍不能移动 mission exit。
+- 修复后两次独立 clean-master Depot 回归连续通过：Run A 两段 rise=2.66m、1.94→2.32m，终点
+  z=4.78m；Run B 为2.79m、1.75→2.06m，终点z=4.73m。两次均完成 staging、REVERIFY、
+  SCAN→STAIR交权、双 flight、`EXIT_VERIFY→COMPLETE`，无假 COMPLETE。
+- 两次 COMPLETE 后末端2s `/cmd_vel` 最大值均为0；运行时 `/cmd_vel` 唯一 publisher 为
+  `/motion_arbiter`。全包编译通过，`catkin_test_results` 共26项、0失败。裁决：P3 Navigation-Level PASS；
+  不代表 Real Go2 Stair Locomotion PASS。按阶段边界停止，下一步才是 P4 floor handoff/active floor map。
 
 ### P2 Landing Next-Flight Reacquisition（Phase A PASS）
 
