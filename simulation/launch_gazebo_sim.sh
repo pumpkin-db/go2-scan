@@ -15,13 +15,22 @@ fi
 # 1) 清理 conda/anaconda 污染（否则 cmake/protobuf/rospy 全乱）
 export PATH=$(echo "$PATH" | tr ':' '\n' | grep -viE "conda|anaconda|miniconda" | tr '\n' ':')
 
-GO2_ROOT=$HOME/claude/raicom/go2-scan
-CMU=$HOME/claude/raicom/go2-scan/simulation/cmu_env
-SCAN=$HOME/claude/raicom/go2-scan/algorithms/local_planning/scan_planner
-ELEV=$HOME/claude/raicom/go2-scan/algorithms/mapping/elevation_mapping
-TARE=$HOME/claude/raicom/go2-scan/algorithms/global_planning/tare
-BRIDGE=$HOME/claude/raicom/go2-scan/integration
-STAIR_PERCEPTION=$HOME/claude/raicom/go2-scan/algorithms/perception/stair_perception
+# repo root 从脚本自身位置推导（worktree-safe）：任何 checkout/worktree 都默认
+# 加载"自己"的代码；可用环境变量 GO2_ROOT 显式覆盖。以下组件均可单独 override。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export GO2_ROOT="${GO2_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+CMU="${CMU:-$GO2_ROOT/simulation/cmu_env}"
+SCAN="${SCAN:-$GO2_ROOT/algorithms/local_planning/scan_planner}"
+ELEV="${ELEV:-$GO2_ROOT/algorithms/mapping/elevation_mapping}"
+TARE="${TARE:-$GO2_ROOT/algorithms/global_planning/tare}"
+BRIDGE="${BRIDGE:-$GO2_ROOT/integration}"
+STAIR_PERCEPTION="${STAIR_PERCEPTION:-$GO2_ROOT/algorithms/perception/stair_perception}"
+echo "[go2-scan launcher]"
+echo "[go2-scan launcher] repo_root=$GO2_ROOT"
+echo "[go2-scan launcher] scan=$SCAN"
+echo "[go2-scan launcher] cmu=$CMU"
+echo "[go2-scan launcher] bridge=$BRIDGE"
+echo "[go2-scan launcher] stair_perception=$STAIR_PERCEPTION"
 
 # 2) source ROS + SCAN-Planner（注意：不能 source ELEV/TARE，catkin setup 会挤掉 SCAN 的 CMAKE_PREFIX_PATH）
 source /opt/ros/noetic/setup.bash
@@ -45,7 +54,7 @@ export LD_LIBRARY_PATH=$TARE/devel/lib:$LD_LIBRARY_PATH
 export ROS_PACKAGE_PATH=$TARE/src:$ROS_PACKAGE_PATH
 
 # 5b) 补 ARiADNE 环境（RL 探索决策层：纯 Python，不用 catkin_make，rospack 直指 src/ 即可找到 rl_planner 包）
-ARIADNE=$HOME/claude/raicom/go2-scan/algorithms/global_planning/ariadne
+ARIADNE="${ARIADNE:-$GO2_ROOT/algorithms/global_planning/ariadne}"
 export ROS_PACKAGE_PATH=$ARIADNE/src:$ROS_PACKAGE_PATH
 
 # 6) go2_bridge（自研胶水，纯 Python，rospack 直指 integration/）

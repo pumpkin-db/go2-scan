@@ -5,7 +5,7 @@
   <!--   Go2 ModelPlugin 在 WorldUpdate 内积分 /cmd_vel、更新模型并发布 pose -->
   <!-- ============================================================ -->
 
-  <arg name="world_file" default="$(env HOME)/claude/raicom/go2-scan/simulation/worlds/indoor_1.world"/>
+  <arg name="world_file" default="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/worlds/indoor_1.world"/>
   <arg name="navi_mode" default="1"/>
   <!-- 全局决策层选择：tare（默认）| ariadne | none。
        none = 纯底盘+传感链（无全局决策核）：B 验收（terrain_follow 遥控上台阶）、
@@ -103,7 +103,7 @@
   <node pkg="odom_visualization" type="odom_visualization" name="odom_visualization" output="screen"/>
 
   <!-- 6. 场景完整点云（ground truth，对照用）：GT 路径随场景切换 -->
-  <arg name="gt_pcd" default="$(env HOME)/claude/raicom/go2-scan/maps/indoor_1.pcd"/>
+  <arg name="gt_pcd" default="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/maps/indoor_1.pcd"/>
   <node pkg="map_generator" type="map_pub" name="map_pub"
         args="$(arg gt_pcd)">
     <param name="frame_id" value="world"/>
@@ -149,7 +149,7 @@
 
   <!-- 旧注册表/高程实现仅作显式 GT 对照后端；正式链默认禁用。 -->
   <arg name="stair_gt_backend" default="false"/>
-  <arg name="stair_registry" default="$(env HOME)/claude/raicom/go2-scan/scenes/depot/scene.yaml"/>
+  <arg name="stair_registry" default="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/scenes/depot/scene.yaml"/>
   <node if="$(arg stair_gt_backend)" pkg="go2_bridge" name="stair_gt_backend" type="stair_detector.py" output="screen">
     <param name="registry" value="$(arg stair_registry)"/>
   </node>
@@ -165,8 +165,8 @@
 
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策）
        cfg_dir 可被场景覆盖（Depot 等场景窗口中心与 indoor_1 不同） -->
-  <arg name="cfg_dir" default="$(env HOME)/claude/raicom/go2-scan/simulation/elevation"/>
-  <include file="$(env HOME)/claude/raicom/go2-scan/simulation/elevation/elevation.launch">
+  <arg name="cfg_dir" default="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/elevation"/>
+  <include file="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/elevation/elevation.launch">
     <arg name="cfg_dir" value="$(arg cfg_dir)"/>
   </include>
 
@@ -196,8 +196,8 @@
          （terrainAnalysis.cpp:227 / terrainAnalysisExt.cpp:193），tare_bridge 现同时发
          /state_estimation 与 _at_scan 双份位姿。此前注释称「已产出」与源码不符，系误判——
          实际两节点饿死空转、TARE 永不规划、狗站桩（bench_tare 首跑实证）。 -->
-    <include file="$(env HOME)/claude/raicom/go2-scan/simulation/cmu_env/src/terrain_analysis/launch/terrain_analysis.launch"/>
-    <include file="$(env HOME)/claude/raicom/go2-scan/simulation/cmu_env/src/terrain_analysis_ext/launch/terrain_analysis_ext.launch"/>
+    <include file="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/cmu_env/src/terrain_analysis/launch/terrain_analysis.launch"/>
+    <include file="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/cmu_env/src/terrain_analysis_ext/launch/terrain_analysis_ext.launch"/>
     <node pkg="tare_planner" type="tare_planner_node" name="tare_planner_node" output="screen" ns="sensor_coverage_planner">
       <rosparam command="load" file="$(find tare_planner)/config/go2.yaml"/>
     </node>
