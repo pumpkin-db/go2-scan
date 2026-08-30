@@ -4,6 +4,59 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-30：V2 当前权威基线——仿真体现层需重建
+
+- 开发唯一主线：`refactor/multifloor-realrobot-v2` @ `ad46df1bf9f189c37107acb5aed37d0fe2191cfa`；
+  `main` 只接收已验证里程碑，历史分支已归档为 tag，不再复活。
+- Go2 步态/TF 已恢复：Gazebo 与 RViz 四腿完整、站姿与步态正常，TF 验证
+  `44/44`、`missing_tf_links=[]`。本阶段禁止改动 gait 架构。
+- 曾出现 Git 源码正确、主 workspace 未重编、`gzserver` 加载旧
+  `libgo2_kinematic_model_plugin.so` 的 stale-binary 问题。今后任何 C++/plugin 改动必须：
+  重编当前 V2 工作区 → `/proc/<gzserver>/maps` 记录实际 `.so` 路径 → SHA-256 证明运行来源。
+- 启动器已改为 worktree-local 路径派生并输出 provenance banner；RViz 地图已分模式：
+  单层 `/projected_map`，多层 `/active_floor_map`。
+- `accepted_staging_pose` 已成为唯一实际楼梯接近目标。ARiADNE bridge 已用
+  `/floor_context/z_ref` 生成 floor-aware `/initial_path`；该修复必须保留。
+- P5 的 control/lifecycle 链已到达 floor0 探索、楼梯任务、handoff、session2 及 floor1
+  waypoint/path。但历史“多层导航通过”的几何证据现已作废：机体曾在实际 Depot
+  支撑几何约 `4.4m` 上方漂浮，仍被 synthetic z 链推动并触发 floor handoff。
+- 当前 ModelPlugin 用 `SetWorldPose` 强制积分 `x/y/yaw`，未让 Gazebo collision/support
+  几何约束机体；用户已再次确认机身会穿入真实楼梯。旧 perception/GT-derived
+  body-z adapter 只能作 `mock/CI` backend，不得用于正式 Depot 几何验收。
+- **当前主阻塞 = simulation embodiment fidelity**。下一任务是 Geometry-Constrained
+  Kinematic Backend V1：模拟运动必须先通过 Gazebo collision/support 检查，z 由实际支撑
+  几何决定，禁止 perception/floor target 驱动物理 z。P5 在平地、真 Depot 楼梯、
+  墙/护栏/无支撑三类 embodiment benchmark 通过前不重验。
+- 最终目标仍为真实 Unitree Go2：自主层只输出安全高层 `cmd_vel`，实机通过已有
+  `cmd_vel_bridge → SportClient` 执行，真实地形与 Unitree 内置运动控制决定 body z。
+
+### Geometry backend Phase 1 取证/接口原型（未改主后端）
+
+- canonical `gazebo_sim.launch` 中唯一 model/body pose writer 是
+  `libgo2_kinematic_model_plugin.so`；旧 `go2_kinematic_sim + gazebo_bridge/set_model_state`
+  只残留于其他历史/专项 launch，未被主 launch 接入。ModelPlugin 每个
+  `WorldUpdateEnd` 积分 `x/y/yaw`并无条件 `SetWorldPose`，没有 collision/support
+  查询；`/sim/body_z_target` 新鲜时以 `0.5m/s` slew 改 z，否则保持旧 z。
+- `stair_episode.launch` 当前无条件启动 `terrain_follow_sim_adapter`。adapter 用感知
+  `StairTrack.entry/exit/rise` + 当前 pose 生成 `TerrainProfileCore`，活跃 episode 中
+  50Hz 发 `/sim/body_z_target`。这是历史 circular z validation 的唯一实际来源。
+  主 launch 的 `terrain_follow` / `terrain_source` / `gt_elev_file` 当前未被 ModelPlugin 消费，
+  是旧 `go2_kinematic_sim` 参数遗留，不能当作当前 backend mode。
+- Depot 实际 SDF 是单个 static `Depot::main` link：包含 100×100 z=0 plane，及
+  `FLOOR/WALLS/STAIRS/...` Collada submesh collision；楼梯碰撞名为
+  `Depot::main::STAIRS_visual_collision`。因为全局 plane 存在，Depot 本身不能验证
+  “无支撑边缘”，后续 safety test 需专用断层小世界。
+- 本机 Gazebo Classic 11.15.1 / ODE 的 global `physics::RayShape`（
+  `PhysicsEngine::CreateShape("ray", CollisionPtr())`）已用 `/tmp` 独立 WorldPlugin 实跑证明。
+  有界下射线稳定命中实际 collision：出生平地 `z=0.000`；主楼梯第一段
+  `0.000→2.600m`；landing 五点均 `2.600m`；折返第二段 `2.600→5.028m`；
+  连续踏步增量约 `0.161m`。楼梯足印五点可同时返回前/后不同踏步高度，
+  证明下一版需多点支撑聚合，不能只查中心点。
+- API 裁决：有界 global RayShape 是当前已证明可用的 support primitive。
+  `ContactManager` 只提供当前 physics-step 接触，无法在 `SetWorldPose` 前验证候选 pose；
+  不适合作为 V1 预接受 gate。水平 swept ray/自模型命中过滤尚未实验，
+  故 Geometry Backend 仍未实现、P5 仍不得重验。
+
 ## 2026-08-30：P5.3 floor-aware Z 冷回归（PARTIAL：未触达 floor1）
 
 - Git preflight 通过：`refactor/multifloor-realrobot-v2` @ `186a224`；仅保留 P5.2 的 bridge 与本文档候选修改。
