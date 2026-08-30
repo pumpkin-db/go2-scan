@@ -5,8 +5,9 @@ import unittest
 from stair_navigation.control import (CorridorFollower, MotionArbiterCore, TerrainProfileCore,
                                       ExitVerifier, compute_staging, landing_reacquire_score,
                                       mission_extent_expands, same_track_geometry,
-                                      stair_state_owns_control)
-from stair_navigation.floor_context import StablePoseWindow, relative_z_band
+                                      stair_state_owns_control, StairEpisodeLifecycle)
+from stair_navigation.floor_context import (FloorHandoffGate, StablePoseWindow,
+                                             relative_z_band)
 
 
 class CoreTests(unittest.TestCase):
@@ -106,6 +107,63 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(window.stable())
         self.assertAlmostEqual(window.floor_z(0.35), 4.38)
         self.assertEqual(relative_z_band(4.38, 0.2, 1.0), (4.58, 5.38))
+
+    def test_complete_latches_past_episode_timeout(self):
+        life = StairEpisodeLifecycle()
+        life.start(1.0)
+        life.transition('COMPLETE', 30.0)
+        self.assertFalse(life.timed_out(200.0, 120.0))
+        self.assertEqual(life.state, 'COMPLETE')
+
+    def test_failed_rejects_late_timer_transition(self):
+        life = StairEpisodeLifecycle()
+        life.start(1.0)
+        life.transition('FAILED', 2.0)
+        self.assertFalse(life.timed_out(500.0, 120.0))
+        self.assertFalse(life.transition('COMPLETE', 3.0))
+        self.assertEqual(life.state, 'FAILED')
+
+    def test_explicit_reset_starts_clean_independent_episode(self):
+        life = StairEpisodeLifecycle()
+        first_id = life.start(1.0)
+        life.transition('COMPLETE', 2.0)
+        self.assertTrue(life.reset(10.0))
+        second_id = life.start(20.0)
+        self.assertEqual(second_id, first_id + 1)
+        self.assertEqual(life.started_at, 20.0)
+        self.assertFalse(life.timed_out(21.0, 120.0))
+
+    def test_terminal_state_disallows_motion(self):
+        life = StairEpisodeLifecycle()
+        life.start(1.0)
+        life.transition('COMPLETE', 2.0)
+        self.assertFalse(life.motion_allowed())
+
+    def test_handoff_is_one_shot_per_episode(self):
+        gate = FloorHandoffGate()
+        gate.observe(7)
+        floor_id = 0
+        self.assertTrue(gate.request(7)); floor_id += 1
+        self.assertFalse(gate.request(7))
+        self.assertTrue(gate.commit())
+        self.assertFalse(gate.request(7))
+        self.assertEqual(floor_id, 1)
+        self.assertEqual(gate.processed, {7})
+
+    def test_new_episode_can_handoff_once_after_previous(self):
+        gate = FloorHandoffGate()
+        gate.observe(7)
+        self.assertTrue(gate.request(7)); self.assertTrue(gate.commit())
+        gate.observe(8)
+        self.assertTrue(gate.request(8)); self.assertTrue(gate.commit())
+        self.assertEqual(gate.processed, {7, 8})
+
+    def test_late_old_completion_cannot_pollute_new_episode(self):
+        gate = FloorHandoffGate()
+        gate.observe(7)
+        gate.observe(8)
+        self.assertFalse(gate.request(7))
+        self.assertTrue(gate.request(8))
 
 
 if __name__ == '__main__':

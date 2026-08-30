@@ -37,3 +37,33 @@ def relative_z_band(floor_z_ref, min_above, max_above):
     if min_above < 0.0 or max_above <= min_above:
         raise ValueError('invalid active-floor z band')
     return floor_z_ref + min_above, floor_z_ref + max_above
+
+
+class FloorHandoffGate:
+    """Accept each completed stair episode exactly once."""
+    def __init__(self):
+        self.current_episode = 0
+        self.pending = None
+        self.processed = set()
+
+    def observe(self, episode_id):
+        if episode_id <= self.current_episode:
+            return False
+        self.current_episode = episode_id
+        if self.pending is not None and self.pending < episode_id:
+            self.pending = None
+        return True
+
+    def request(self, episode_id):
+        if (episode_id <= 0 or episode_id != self.current_episode or
+                episode_id == self.pending or episode_id in self.processed):
+            return False
+        self.pending = episode_id
+        return True
+
+    def commit(self):
+        if self.pending is None:
+            return False
+        self.processed.add(self.pending)
+        self.pending = None
+        return True

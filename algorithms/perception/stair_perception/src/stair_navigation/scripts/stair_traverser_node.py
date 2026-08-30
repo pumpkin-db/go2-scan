@@ -4,11 +4,11 @@ import rospy
 import tf.transformations
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Int32, String
 from stair_perception.msg import StairTrack, StairTrackArray
 from stair_navigation.control import (CorridorFollower, ExitVerifier, clamp,
                                       landing_reacquire_score, mission_extent_expands,
-                                      stair_state_owns_control, wrap)
+                                      stair_state_owns_control, StairEpisodeLifecycle, wrap)
 
 
 class StairTraverser:
@@ -22,6 +22,7 @@ class StairTraverser:
         self.tracks = []
         self.active_track = None
         self.used_ids = set()
+        self.lifecycle = StairEpisodeLifecycle()
         self.state = self.IDLE
         self.state_since = rospy.Time.now()
         self.episode_since = None
@@ -45,11 +46,15 @@ class StairTraverser:
         self.cmd_pub = rospy.Publisher('/cmd_vel_stair', Twist, queue_size=1)
         self.active_pub = rospy.Publisher('/stair_episode/active', Bool, queue_size=1, latch=True)
         self.state_pub = rospy.Publisher('/stair_episode/state', String, queue_size=1, latch=True)
+        self.episode_pub = rospy.Publisher('/stair_episode/id', Int32, queue_size=1, latch=True)
+        self.completed_pub = rospy.Publisher('/stair_episode/completed_id', Int32,
+                                             queue_size=1, latch=True)
         self.track_pub = rospy.Publisher('/stair_episode/active_track', StairTrack,
                                          queue_size=1, latch=True)
         rospy.Subscriber('/quad_0/body_pose', Odometry, self.pose_cb, queue_size=1)
         rospy.Subscriber('/stair_perception/tracks', StairTrackArray, self.tracks_cb, queue_size=1)
         rospy.Subscriber('/stair_episode/start_track', StairTrack, self.start_track_cb, queue_size=1)
+        rospy.Subscriber('/stair_episode/reset', Bool, self.reset_cb, queue_size=1)
         rospy.Timer(rospy.Duration(0.05), self.tick)
         self.publish_state()
 
@@ -66,11 +71,42 @@ class StairTraverser:
         if self.state == self.IDLE and not self.auto_start:
             self.requested_track = msg
 
+    def reset_cb(self, msg):
+        if msg.data:
+            self.reset_episode()
+
+    def reset_episode(self):
+        now = rospy.Time.now()
+        if not self.lifecycle.reset(now.to_sec()):
+            return False
+        self.stop()
+        self.active_track = None
+        self.used_ids.clear()
+        self.requested_track = None
+        self.flights = 0
+        self.episode_since = None
+        self.episode_start_z = None
+        self.expected_rise = 0.0
+        self.exit_verifier = None
+        self.state = self.IDLE
+        self.state_since = now
+        self.publish_state()
+        rospy.loginfo('[stair_traverser] episode reset; awaiting new start')
+        return True
+
     def set_state(self, state):
+        now = rospy.Time.now()
+        if not self.lifecycle.transition(self.NAMES[state], now.to_sec()):
+            return False
         self.state = state
-        self.state_since = rospy.Time.now()
+        self.state_since = now
+        if state in (self.COMPLETE, self.FAILED):
+            self.episode_since = None
         self.publish_state()
         rospy.loginfo('[stair_traverser] state=%s flights=%d', self.NAMES[state], self.flights)
+        if state == self.COMPLETE:
+            self.completed_pub.publish(Int32(self.lifecycle.episode_id))
+        return True
 
     def publish_state(self):
         active = stair_state_owns_control(self.NAMES[self.state])
@@ -142,12 +178,18 @@ class StairTraverser:
         self.cmd_pub.publish(Twist())
 
     def fail(self, reason):
+        if self.lifecycle.terminal():
+            self.stop()
+            return
         rospy.logerr('[stair_traverser] FAIL: %s', reason)
         self.stop()
         self.set_state(self.FAILED)
 
     def tick(self, _event):
         now = rospy.Time.now()
+        if self.lifecycle.terminal():
+            self.stop()
+            return
         if self.pose is None:
             self.stop()
             return
@@ -155,7 +197,7 @@ class StairTraverser:
                 (now - self.pose_seen_at).to_sec() > self.pose_timeout):
             self.fail('localization timeout')
             return
-        if self.episode_since and (now - self.episode_since).to_sec() > self.max_episode_time:
+        if self.lifecycle.timed_out(now.to_sec(), self.max_episode_time):
             self.fail('episode timeout')
             return
         if self.state == self.IDLE:
@@ -163,15 +205,15 @@ class StairTraverser:
             track = self.choose_track() if self.auto_start else self.requested_track
             if track:
                 self.requested_track = None
+                episode_id = self.lifecycle.start(now.to_sec())
+                if episode_id is None:
+                    return
+                self.episode_pub.publish(Int32(episode_id))
                 self.episode_since = now
                 self.episode_start_z = self.pose.z
                 self.expected_rise = 0.0
                 self.activate_track(track)
             return
-        if self.state in (self.COMPLETE, self.FAILED):
-            self.stop()
-            return
-
         self.refresh_mission_snapshot()
 
         entry = self.active_track.entry_pose.position if self.active_track else None

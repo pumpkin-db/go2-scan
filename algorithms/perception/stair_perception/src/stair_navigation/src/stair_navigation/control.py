@@ -51,6 +51,50 @@ def stair_state_owns_control(state_name):
     return state_name != 'IDLE'
 
 
+class StairEpisodeLifecycle:
+    """Authority for terminal latching and per-episode timeout state."""
+    ACTIVE = frozenset(('ACQUIRE', 'ALIGN', 'ASCEND', 'LANDING_SCAN', 'EXIT_VERIFY'))
+    TERMINAL = frozenset(('COMPLETE', 'FAILED'))
+
+    def __init__(self):
+        self.state = 'IDLE'
+        self.episode_id = 0
+        self.started_at = None
+
+    def start(self, now):
+        if self.state != 'IDLE':
+            return None
+        self.episode_id += 1
+        self.started_at = now
+        self.state = 'ACQUIRE'
+        return self.episode_id
+
+    def transition(self, state, _now):
+        if self.state in self.TERMINAL:
+            return False
+        self.state = state
+        if state in self.TERMINAL:
+            self.started_at = None
+        return True
+
+    def timed_out(self, now, timeout):
+        return (self.state in self.ACTIVE and self.started_at is not None and
+                now - self.started_at > timeout)
+
+    def motion_allowed(self):
+        return self.state in self.ACTIVE
+
+    def terminal(self):
+        return self.state in self.TERMINAL
+
+    def reset(self, _now):
+        if self.state not in self.TERMINAL:
+            return False
+        self.state = 'IDLE'
+        self.started_at = None
+        return True
+
+
 def landing_reacquire_score(previous_heading, candidate_heading, candidate_entry, robot_pose,
                             candidate_rise, last_seen, landing_since, max_range=4.0,
                             max_vertical=0.9, min_turn_deg=120.0,

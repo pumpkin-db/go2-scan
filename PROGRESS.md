@@ -6,6 +6,20 @@
 
 ## 2026-08-29：主线交接与 P0 资料审计
 
+### P4.5 Stair/Floor 生命周期稳定化（PASS）
+
+- 根因确认并修复：episode 120s timeout 原先位于终态短路之前。新增统一 lifecycle；仅
+  `ACQUIRE/ALIGN/ASCEND/LANDING_SCAN/EXIT_VERIFY` 参与 timeout，`COMPLETE/FAILED` 锁存、持续零速，
+  所有普通状态转换与 fail callback 均不能覆盖终态。
+- 新增单调 `episode_id`、`completed_id` 和显式 `/stair_episode/reset`。reset 仅允许终态→`IDLE`，清除
+  active mission、used IDs、flight count、timeout origin、rise/exit verifier；下一 episode 独立编号和计时。
+- Floor Handoff 改按 `completed_id` one-shot：pending/processed gate 对同 episode 重复 COMPLETE 为 NO-OP，
+  拒绝新 episode 后迟到的旧 completion；transition 持久记录新增 `episode_id`，floor_id 不会重复递增。
+- 全包构建/测试：34 tests、0 error、0 failure（新增终态超时/转换、零运动、reset/new episode、handoff
+  幂等、迟到旧消息覆盖）。`py_compile` 与 `git diff --check` 通过。
+- 25min 内未重复完整 Depot 120s+ 长回归；P1/P2/P3、detector/tracker、SCAN、arbiter、ModelPlugin、
+  active-floor projection、ARiADNE 均未修改。裁决：P4.5 PASS；停止，不开始 P5。
+
 ### P4 Floor Handoff / Active-Floor Map（Navigation-Level PASS）
 
 - 地图链审计：原 `/projected_map` 来自 ARiADNE launch 内 `octomap_server`，分辨率0.2m、frame=`map`

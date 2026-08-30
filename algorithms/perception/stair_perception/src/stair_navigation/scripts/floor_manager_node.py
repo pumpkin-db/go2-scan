@@ -6,7 +6,7 @@ from dynamic_reconfigure.client import Client
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool, Float64, Int32, String
 from stair_perception.msg import StairTrack
-from stair_navigation.floor_context import StablePoseWindow, relative_z_band
+from stair_navigation.floor_context import FloorHandoffGate, StablePoseWindow, relative_z_band
 
 
 class FloorManager:
@@ -14,8 +14,10 @@ class FloorManager:
         self.floor_id = 0
         self.floor_z_ref = None
         self.stair_state = 'IDLE'
+        self.episode_id = 0
+        self.waiting_completion = None
         self.state = 'INITIALIZING'
-        self.handoff_pending = False
+        self.handoff_gate = FloorHandoffGate()
         self.tracks = []
         self.transitions = []
         self.body_height = rospy.get_param('~body_height', 0.35)
@@ -38,6 +40,8 @@ class FloorManager:
         self.transition_pub = rospy.Publisher('/floor_context/transition', String, queue_size=1, latch=True)
         rospy.Subscriber('/quad_0/body_pose', Odometry, self.pose_cb, queue_size=1)
         rospy.Subscriber('/stair_episode/state', String, self.stair_state_cb, queue_size=1)
+        rospy.Subscriber('/stair_episode/id', Int32, self.episode_cb, queue_size=1)
+        rospy.Subscriber('/stair_episode/completed_id', Int32, self.completion_cb, queue_size=1)
         rospy.Subscriber('/stair_episode/active_track', StairTrack, self.track_cb, queue_size=4)
         rospy.Timer(rospy.Duration(0.1), self.tick)
         self.publish_context()
@@ -47,13 +51,32 @@ class FloorManager:
         self.window.add(rospy.get_time(), (p.x, p.y, p.z))
 
     def stair_state_cb(self, msg):
-        previous = self.stair_state
         self.stair_state = msg.data
-        if msg.data == 'COMPLETE' and previous != 'COMPLETE' and self.floor_z_ref is not None:
-            self.handoff_pending = True
-            self.state = 'FLOOR_HANDOFF'
-            self.window.clear()
-            self.publish_context()
+
+    def episode_cb(self, msg):
+        if msg.data > self.episode_id:
+            if self.episode_id:
+                self.tracks = []
+            self.episode_id = msg.data
+            self.handoff_gate.observe(msg.data)
+        if self.waiting_completion == self.episode_id:
+            self.waiting_completion = None
+            self.begin_handoff(self.episode_id)
+
+    def completion_cb(self, msg):
+        if msg.data < self.episode_id:
+            return
+        if msg.data != self.episode_id:
+            self.waiting_completion = msg.data
+            return
+        self.begin_handoff(msg.data)
+
+    def begin_handoff(self, episode_id):
+        if self.floor_z_ref is None or not self.handoff_gate.request(episode_id):
+            return
+        self.state = 'FLOOR_HANDOFF'
+        self.window.clear()
+        self.publish_context()
 
     def track_cb(self, msg):
         if not self.tracks or self.tracks[-1].id != msg.id:
@@ -85,12 +108,13 @@ class FloorManager:
     def point(p):
         return {'x': p.x, 'y': p.y, 'z': p.z}
 
-    def publish_transition(self, from_floor, to_floor):
+    def publish_transition(self, from_floor, to_floor, episode_id):
         first = self.tracks[0] if self.tracks else None
         last = self.tracks[-1] if self.tracks else None
         record = {
             'from_floor': from_floor,
             'to_floor': to_floor,
+            'episode_id': episode_id,
             'stair_id': '-'.join(str(track.id) for track in self.tracks),
             'entry': self.point(first.entry_pose.position) if first else None,
             'exit': self.point(last.exit_pose.position) if last else None,
@@ -118,14 +142,14 @@ class FloorManager:
             rospy.loginfo('[floor_manager] floor=0 z_ref=%.3f', self.floor_z_ref)
             return
 
-        if not self.handoff_pending or not self.window.stable():
+        if self.handoff_gate.pending is None or not self.window.stable():
             return
         new_z_ref = self.window.floor_z(self.body_height)
         if new_z_ref < self.floor_z_ref + self.min_floor_separation:
             rospy.logerr('[floor_manager] rejected handoff: z_ref %.3f -> %.3f',
                          self.floor_z_ref, new_z_ref)
             self.state = 'FAILED'
-            self.handoff_pending = False
+            self.handoff_gate.commit()
             self.publish_context()
             return
         try:
@@ -134,11 +158,12 @@ class FloorManager:
             rospy.logwarn_throttle(2.0, '[floor_manager] handoff projection unavailable: %s', exc)
             return
         old_floor = self.floor_id
+        episode_id = self.handoff_gate.pending
         self.floor_id += 1
         self.floor_z_ref = new_z_ref
-        self.publish_transition(old_floor, self.floor_id)
+        self.publish_transition(old_floor, self.floor_id, episode_id)
+        self.handoff_gate.commit()
         self.state = 'ACTIVE'
-        self.handoff_pending = False
         self.publish_context()
         rospy.loginfo('[floor_manager] handoff %d->%d z_ref=%.3f',
                       old_floor, self.floor_id, self.floor_z_ref)
