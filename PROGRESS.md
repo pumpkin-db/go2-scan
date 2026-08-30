@@ -4,6 +4,31 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-30：P5.1 Safe Approach Goal（staging blocker PASS；P5 E2E PARTIAL）
+
+- 目标：分离 persistent stair geometry 与 current executable ApproachGoal，建立唯一
+  `accepted_staging_pose`，消除“SCAN 去 B、arrival 等 A”的 staging timeout。
+- 根因确认：P3 原先从 canonical entry 直接生成 nominal A；SCAN 的
+  `adjustGlobalTargetIfOccupied()` 会在 3D inflation 中回退到 B，但 B 不回传，arrival 永远检查 A。
+  实测 A=`(9.25,2.37)`、SCAN B=`(9.24,2.57)`。
+- 新增 active-floor safe staging：按楼梯反向 0.6–2.0m、横向 0/±0.2/±0.4m 生成少量候选；仅接受
+  FREE、非 UNKNOWN、0.25m clearance、与机器人 free component 连通点。无候选立即安全 FAILED，
+  不发 path、不启动 episode。partial/base-disconnected mission 不再直接把旧 entry 当执行目标。
+- 唯一契约：`/stair_approach/accepted_staging_pose` 是 transient authoritative goal；同一点写入
+  `/initial_path`、arrival checker、日志。若 SCAN 仍调整，复用其既有 final goal marker 回传并更新 accepted；
+  不修改 SCAN core。到 staging 后仍执行 fresh REVERIFY，再发 `/stair_episode/start_track`。
+- Depot 证据：首个严格候选集因 track 6 近侧 0.6–1.0m occupied、1.2m clearance 不足而 fail-closed；
+  地图逐点诊断确认 1.6m 起 FREE+clearance+connected，故有界扩到 2.0m。恢复同一运行后 accepted=
+  `(13.20,3.96)`，SCAN 未再回退；`NAVIGATE→REVERIFY→DONE→STAIR_TRAVERSE`，双 flight COMPLETE，
+  floor `0→1`，新 active map，ARiADNE `session 1→2`、`EXPLORING`，并产生 floor1 waypoint `(12,0)`。
+- 尚未满足最终 P5 PASS：floor1 新 waypoint/target_valid 已出现，但观察窗内 body 未移动、`cmd_vel=0`；
+  本轮时间到未继续定位。运行中 `/cmd_vel` 唯一 publisher 为 `/motion_arbiter`，无重复 handoff/假 COMPLETE。
+  本次后半程因第一版候选已进入终态，采用只重启 approach 节点继续同一 episode 验证；仍需冷启动完整复跑。
+- 修改：`safe_staging.py`、`stair_approach_node.py`、`test_cores.py`。验证：Python compile、catkin build、
+  31 core tests、diff check通过。裁决：P5.1 staging blocker PASS；P5 E2E PARTIAL。
+- 下一步：① 冷启动复跑确认无需人工节点恢复；② 只定位 floor1 新 `/initial_path` 到 SCAN/closed-loop 的零速断点；
+  ③ floor1 实际开始自主运动后再标 P5 Navigation-Level PASS。
+
 ## 2026-08-30：P5 ARiADNE Multi-Floor Lifecycle（PARTIAL）
 
 - 生命周期审计：ARiADNE 原先固定订阅 `/projected_map`，完成仅锁存在进程内 `done`；graph/node/utility

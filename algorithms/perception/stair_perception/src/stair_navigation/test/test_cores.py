@@ -9,9 +9,74 @@ from stair_navigation.control import (CorridorFollower, MotionArbiterCore, Terra
 from stair_navigation.floor_context import (FloorHandoffGate, StablePoseWindow,
                                              relative_z_band)
 from stair_navigation.multifloor import MultiFloorLifecycle
+from stair_navigation.safe_staging import (OccupancyGridView, accept_planner_endpoint,
+                                            select_safe_staging, staging_arrived)
+
+
+class Attr:
+    pass
+
+
+def grid_message(width=30, height=30, resolution=0.1):
+    msg = Attr(); msg.info = Attr(); msg.info.origin = Attr()
+    msg.info.origin.position = Attr(); msg.info.origin.orientation = Attr()
+    msg.info.width, msg.info.height, msg.info.resolution = width, height, resolution
+    msg.info.origin.position.x = msg.info.origin.position.y = 0.0
+    q = msg.info.origin.orientation
+    q.x = q.y = q.z = 0.0; q.w = 1.0
+    msg.data = [0] * (width * height)
+    return msg
+
+
+def occupy(msg, x, y):
+    cell_x, cell_y = int(x / msg.info.resolution), int(y / msg.info.resolution)
+    msg.data[cell_y * msg.info.width + cell_x] = 100
 
 
 class CoreTests(unittest.TestCase):
+    def test_safe_staging_accepts_free_nominal_goal(self):
+        grid = OccupancyGridView(grid_message())
+        accepted = select_safe_staging(grid, (0.5, 1.5), (2.0, 1.5), (1.0, 0.0),
+                                       clearance=0.15)
+        self.assertEqual(accepted, (1.0, 1.5))
+
+    def test_safe_staging_replaces_occupied_nominal_goal(self):
+        msg = grid_message()
+        occupy(msg, 1.0, 1.5)
+        accepted = select_safe_staging(OccupancyGridView(msg), (0.5, 1.5),
+                                       (2.0, 1.5), (1.0, 0.0), clearance=0.15)
+        self.assertIsNotNone(accepted)
+        self.assertNotEqual(accepted, (1.0, 1.5))
+        self.assertTrue(staging_arrived(accepted, accepted, 0.35))
+        self.assertFalse(staging_arrived(accepted, (1.0, 1.5), 0.05))
+
+    def test_safe_staging_endpoint_is_single_accepted_value(self):
+        grid = OccupancyGridView(grid_message())
+        accepted = select_safe_staging(grid, (0.5, 1.5), (2.0, 1.5), (1.0, 0.0),
+                                       clearance=0.15)
+        scan_endpoint = accept_planner_endpoint(accepted, (accepted[0] + 0.2, accepted[1]))
+        arrival_target = scan_endpoint
+        self.assertEqual(scan_endpoint, arrival_target)
+
+    def test_safe_staging_rejects_implausible_planner_endpoint(self):
+        self.assertIsNone(accept_planner_endpoint((1.0, 1.0), (3.0, 1.0)))
+
+    def test_safe_staging_fails_when_no_candidate_is_free(self):
+        msg = grid_message()
+        msg.data = [-1] * len(msg.data)
+        accepted = select_safe_staging(OccupancyGridView(msg), (0.5, 1.5),
+                                       (2.0, 1.5), (1.0, 0.0), clearance=0.15)
+        self.assertIsNone(accepted)
+
+    def test_partial_mission_old_entry_requires_current_map_connection(self):
+        msg = grid_message()
+        for y in range(msg.info.height):
+            msg.data[y * msg.info.width + 12] = 100
+        accepted = select_safe_staging(OccupancyGridView(msg), (0.5, 1.5),
+                                       (2.4, 1.5), (1.0, 0.0), clearance=0.15,
+                                       distances=(0.6,), lateral_offsets=(0.0,))
+        self.assertIsNone(accepted)
+
     def test_arbiter_is_fail_closed_and_exclusive(self):
         core = MotionArbiterCore(timeout=0.3)
         core.update('nav', 'nav', 1.0)
