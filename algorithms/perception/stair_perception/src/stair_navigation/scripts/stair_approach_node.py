@@ -14,6 +14,8 @@ class StairApproach:
     NAMES = ['WAIT_TRACK', 'NAVIGATE', 'REVERIFY', 'HANDOFF', 'DONE', 'FAILED']
 
     def __init__(self):
+        self.auto_start = rospy.get_param('~auto_start', True)
+        self.enabled = self.auto_start
         self.pose = None
         self.pose_seen_at = rospy.Time(0)
         self.tracks = []
@@ -21,6 +23,7 @@ class StairApproach:
         self.nav_cmd_seen_at = rospy.Time(0)
         self.stair_active = False
         self.selected = None
+        self.requested = None
         self.staging = None
         self.stop_since = None
         self.state = self.WAIT_TRACK
@@ -39,6 +42,9 @@ class StairApproach:
         rospy.Subscriber('/stair_perception/tracks', StairTrackArray, self.tracks_cb, queue_size=1)
         rospy.Subscriber('/cmd_vel_nav', Twist, self.nav_cb, queue_size=1)
         rospy.Subscriber('/stair_episode/active', Bool, self.active_cb, queue_size=1)
+        rospy.Subscriber('/stair_approach/start', Bool, self.start_cb, queue_size=1)
+        rospy.Subscriber('/stair_approach/reset', Bool, self.reset_cb, queue_size=1)
+        rospy.Subscriber('/stair_approach/mission_track', StairTrack, self.mission_cb, queue_size=1)
         rospy.Timer(rospy.Duration(0.05), self.tick)
         self.publish_state()
 
@@ -56,6 +62,24 @@ class StairApproach:
     def active_cb(self, msg):
         self.stair_active = msg.data
 
+    def start_cb(self, msg):
+        if msg.data and self.state == self.WAIT_TRACK:
+            self.enabled = True
+
+    def mission_cb(self, msg):
+        if self.state == self.WAIT_TRACK and msg.state == StairTrack.CONFIRMED:
+            self.requested = msg
+
+    def reset_cb(self, msg):
+        if not msg.data or self.state not in (self.DONE, self.FAILED):
+            return
+        self.selected = None
+        self.requested = None
+        self.staging = None
+        self.stop_since = None
+        self.enabled = self.auto_start
+        self.set_state(self.WAIT_TRACK)
+
     def set_state(self, state):
         self.state = state
         self.state_since = rospy.Time.now()
@@ -71,6 +95,8 @@ class StairApproach:
         self.set_state(self.FAILED)
 
     def choose_track(self):
+        if self.requested is not None:
+            return self.requested
         choices = []
         for track in self.tracks:
             if track.state != StairTrack.CONFIRMED:
@@ -126,6 +152,8 @@ class StairApproach:
             return
         elapsed = (now - self.state_since).to_sec()
         if self.state == self.WAIT_TRACK:
+            if not self.enabled:
+                return
             if self.path_pub.get_num_connections() == 0:
                 return
             self.selected = self.choose_track()

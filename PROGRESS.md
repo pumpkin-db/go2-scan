@@ -4,6 +4,29 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-30：P5 ARiADNE Multi-Floor Lifecycle（PARTIAL）
+
+- 生命周期审计：ARiADNE 原先固定订阅 `/projected_map`，完成仅锁存在进程内 `done`；graph/node/utility
+  位于 `Agent/NodeManager`，无 pause/reset/status。`/way_point → ariadne_goal_bridge → /initial_path`
+  为探索目标链，bridge 原先无目标失效接口。
+- 新增最薄 Supervisor：`EXPLORE → PAUSE_EXPLORER → STAIR_APPROACH → STAIR_TRAVERSE →
+  FLOOR_HANDOFF → WAIT_FLOOR_MAP → RESET_EXPLORER → EXPLORE`；只协调 topic，不发速度、不算楼梯/
+  地图/探索目标。confirmed stair 作为当前层 mission 持久保存，handoff 后清空，避免 tracker 5s 超时导致
+  floor COMPLETE 时无楼梯可用；仍复用 P3 staging + fresh reverify。
+- ARiADNE 新增 latched status/session、pause、`reset_for_floor`。reset 重建 Agent/NodeManager，并清除 start、
+  graph/node/utility、目标/path队列、history、completion、save/escape/blocked、计时与 step；checkpoint、policy、
+  escape OFF、blocked OFF、utility 0.5 不变。bridge pause 后拒绝 waypoint、清除 target-valid/去重状态。
+- P5 模式从 floor0 起令 ARiADNE 订阅 `/active_floor_map`；handoff 后需 floor_id 更新、新 map 数据、fresh pose、
+  1s stable pose 同时成立才 reset。reset 后新 session ID 与 COMPLETE 清除确认后才 resume；同时显式 reset
+  stair episode/approach。Motion Arbiter 未改，仍为唯一 `/cmd_vel` publisher。
+- smoke 暴露 P4 与 ARiADNE 重复启动 `map→world TF + sensorScanGeneration`；已改为 multi-floor 时复用
+  ARiADNE 转换链，active-floor 侧只保留 OctoMap。P4 standalone 默认链不变；launch 解析确认无重复节点。
+- 验证：39 tests、0 failure；Python compile、launch解析、参数检查通过（map=`/active_floor_map`、escape=false、
+  utility=0.5、approach auto-start=false）；短 Depot smoke 确认节点启动、active map 发布且 ARiADNE/Supervisor
+  均订阅、`/cmd_vel` 唯一 publisher=`/motion_arbiter`。修复重复转换链后未再跑完整 smoke/长闭环。
+- 裁决：P5 PARTIAL。下一步唯一动作：重跑修复后的 Depot 集成，先确认 ARiADNE floor0 从 STARTING→
+  EXPLORING，再完成 floor0 COMPLETE→双 flight→floor1 session/新 waypoint 端到端验收。
+
 ## 2026-08-29：主线交接与 P0 资料审计
 
 ### P4.5 Stair/Floor 生命周期稳定化（PASS）

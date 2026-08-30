@@ -17,6 +17,7 @@ frame_id 用 world（SCAN 全局系；数值与 map 恒等，由 map→world 静
 import rospy
 from geometry_msgs.msg import PointStamped, PoseStamped
 from nav_msgs.msg import Odometry, Path
+from std_msgs.msg import Bool
 
 
 class WaypointBridge(object):
@@ -24,17 +25,34 @@ class WaypointBridge(object):
         self.repub_dist = float(rospy.get_param('~repub_dist', 1.0))
         self.robot_xy = None
         self.last_sent = None
+        self.paused = False
         # latch 不开：latch 会让迟连接的订阅者收到旧 Path 触发意外重规划
         self.path_pub = rospy.Publisher('/initial_path', Path, queue_size=1)
+        self.valid_pub = rospy.Publisher('/ariadne/bridge/target_valid', Bool,
+                                         queue_size=1, latch=True)
         rospy.Subscriber('/quad_0/body_pose', Odometry, self.odom_cb, queue_size=1)
         rospy.Subscriber('/way_point', PointStamped, self.waypoint_cb, queue_size=1)
+        rospy.Subscriber('/ariadne/lifecycle/pause', Bool, self.pause_cb, queue_size=1)
+        rospy.Subscriber('/ariadne/lifecycle/reset_for_floor', Bool, self.reset_cb, queue_size=1)
+        self.valid_pub.publish(Bool(False))
 
     def odom_cb(self, msg):
         p = msg.pose.pose.position
         self.robot_xy = (p.x, p.y)
 
+    def pause_cb(self, msg):
+        self.paused = msg.data
+        if self.paused:
+            self.last_sent = None
+            self.valid_pub.publish(Bool(False))
+
+    def reset_cb(self, msg):
+        if msg.data:
+            self.last_sent = None
+            self.valid_pub.publish(Bool(False))
+
     def waypoint_cb(self, msg):
-        if self.robot_xy is None:
+        if self.paused or self.robot_xy is None:
             return  # 未收到里程计前不发：SCAN 需要真实起点
         wp = (msg.point.x, msg.point.y)
         if self.last_sent is not None:
@@ -56,6 +74,7 @@ class WaypointBridge(object):
             path.poses.append(ps)
         self.path_pub.publish(path)
         self.last_sent = wp
+        self.valid_pub.publish(Bool(True))
         rospy.loginfo('[ariadne_goal_bridge] 转发航点 (%.2f, %.2f)', wp[0], wp[1])
 
 

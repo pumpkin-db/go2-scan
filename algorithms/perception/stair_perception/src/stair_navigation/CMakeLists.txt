@@ -11,6 +11,7 @@ catkin_install_python(PROGRAMS
   scripts/stair_traverser_node.py
   scripts/terrain_follow_sim_adapter.py
   scripts/floor_manager_node.py
+  scripts/multifloor_supervisor_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 install(DIRECTORY launch/ DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch)
 

@@ -16,6 +16,7 @@
   <arg name="stair_episode" default="false"/>
   <arg name="stair_approach" default="false"/>
   <arg name="floor_handoff" default="false"/>
+  <arg name="multi_floor" default="$(eval global_planner == 'ariadne' and stair_episode and stair_approach and floor_handoff)"/>
   <arg name="navi_mode_eff" value="$(eval '3' if global_planner == 'ariadne' or stair_approach else navi_mode)"/>
   <!-- 2026-08-26 两分支统一吃近距过滤云（原 tare 分支直吃原云已作废）：
        velodyne 360° 下视射线含狗体自回波，tare 首跑实证 grid_map 起点被自占
@@ -143,7 +144,9 @@
   <include if="$(arg stair_episode)" file="$(find stair_navigation)/launch/stair_episode.launch">
     <arg name="auto_start" value="$(eval not stair_approach)"/>
     <arg name="approach_enabled" value="$(arg stair_approach)"/>
+    <arg name="approach_auto_start" value="$(eval not multi_floor)"/>
     <arg name="floor_handoff" value="$(arg floor_handoff)"/>
+    <arg name="multi_floor" value="$(arg multi_floor)"/>
   </include>
 
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策）
@@ -192,7 +195,9 @@
   <group if="$(eval global_planner == 'ariadne')">
     <!-- ARiADNE 建图+决策链：sensorScanGeneration + map→world 恒等桥 + octomap_server +
          rl_planner（官方原版 py）。接线契约依据见包内 launch 注释。 -->
-    <include file="$(find rl_planner)/launch/go2_ariadne.launch"/>
+    <include file="$(find rl_planner)/launch/go2_ariadne.launch">
+      <arg name="map_topic" value="$(eval '/active_floor_map' if multi_floor else '/projected_map')"/>
+    </include>
 
     <!-- A2 出口：/way_point -> /initial_path（SCAN navi_mode=3），去重门控 -->
     <node pkg="go2_bridge" name="ariadne_goal_bridge" type="ariadne_goal_bridge.py" output="screen">

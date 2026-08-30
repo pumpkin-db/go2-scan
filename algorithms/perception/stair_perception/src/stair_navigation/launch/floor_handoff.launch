@@ -3,12 +3,14 @@
   <arg name="sensor_range" default="6.0"/>
   <arg name="occupancy_min_above_floor" default="0.2"/>
   <arg name="occupancy_max_above_floor" default="1.0"/>
+  <arg name="publish_map_world_tf" default="true"/>
+  <arg name="publish_sensor_scan" default="true"/>
 
   <!-- Preserve /projected_map. This parallel server keeps global 3D occupancy and
        exposes only its dynamically selected floor projection. -->
-  <node pkg="tf" type="static_transform_publisher" name="active_floor_map_world_bridge"
+  <node if="$(arg publish_map_world_tf)" pkg="tf" type="static_transform_publisher" name="active_floor_map_world_bridge"
         args="0 0 0 0 0 0 1 map world 100"/>
-  <node pkg="sensor_scan_generation" type="sensorScanGeneration"
+  <node if="$(arg publish_sensor_scan)" pkg="sensor_scan_generation" type="sensorScanGeneration"
         name="active_floor_sensor_scan_generation" output="screen">
     <remap from="/registered_scan" to="/mid360_points_clean"/>
     <remap from="/state_estimation" to="/quad_0/lidar_pose"/>

@@ -2,7 +2,9 @@
   <arg name="required_flights" default="2"/>
   <arg name="auto_start" default="true"/>
   <arg name="approach_enabled" default="false"/>
+  <arg name="approach_auto_start" default="true"/>
   <arg name="floor_handoff" default="false"/>
+  <arg name="multi_floor" default="false"/>
 
   <node pkg="stair_navigation" type="motion_arbiter_node.py" name="motion_arbiter" output="screen"/>
   <node pkg="stair_navigation" type="stair_traverser_node.py" name="stair_traverser" output="screen">
@@ -12,6 +14,13 @@
   <node pkg="stair_navigation" type="terrain_follow_sim_adapter.py"
         name="terrain_follow_sim_adapter" output="screen"/>
   <node if="$(arg approach_enabled)" pkg="stair_navigation" type="stair_approach_node.py"
-        name="stair_approach" output="screen"/>
-  <include if="$(arg floor_handoff)" file="$(find stair_navigation)/launch/floor_handoff.launch"/>
+        name="stair_approach" output="screen">
+    <param name="auto_start" value="$(arg approach_auto_start)"/>
+  </node>
+  <include if="$(arg floor_handoff)" file="$(find stair_navigation)/launch/floor_handoff.launch">
+    <arg name="publish_map_world_tf" value="$(eval not multi_floor)"/>
+    <arg name="publish_sensor_scan" value="$(eval not multi_floor)"/>
+  </include>
+  <node if="$(arg multi_floor)" pkg="stair_navigation" type="multifloor_supervisor_node.py"
+        name="multifloor_supervisor" output="screen"/>
 </launch>

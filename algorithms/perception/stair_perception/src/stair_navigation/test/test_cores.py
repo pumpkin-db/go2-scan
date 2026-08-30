@@ -8,6 +8,7 @@ from stair_navigation.control import (CorridorFollower, MotionArbiterCore, Terra
                                       stair_state_owns_control, StairEpisodeLifecycle)
 from stair_navigation.floor_context import (FloorHandoffGate, StablePoseWindow,
                                              relative_z_band)
+from stair_navigation.multifloor import MultiFloorLifecycle
 
 
 class CoreTests(unittest.TestCase):
@@ -164,6 +165,49 @@ class CoreTests(unittest.TestCase):
         gate.observe(8)
         self.assertFalse(gate.request(7))
         self.assertTrue(gate.request(8))
+
+    def test_multifloor_complete_requires_available_stair(self):
+        life = MultiFloorLifecycle(floor_id=0, session_id=4)
+        self.assertFalse(life.exploration_complete(False))
+        self.assertEqual(life.state, 'EXPLORE')
+        self.assertTrue(life.exploration_complete(True))
+        self.assertFalse(life.exploration_complete(True))
+        self.assertEqual(life.transition_count, 1)
+
+    def test_multifloor_pause_requires_invalidated_target(self):
+        life = MultiFloorLifecycle(session_id=4)
+        life.exploration_complete(True)
+        self.assertFalse(life.explorer_paused(False))
+        self.assertTrue(life.explorer_paused(True))
+        self.assertEqual(life.state, 'STAIR_APPROACH')
+
+    def test_multifloor_handoff_cannot_reset_early(self):
+        life = MultiFloorLifecycle(floor_id=0, session_id=4)
+        life.exploration_complete(True); life.explorer_paused(True)
+        life.approach_handoff(); life.stair_complete()
+        self.assertFalse(life.floor_ready(True, True, True))
+        self.assertFalse(life.observe_floor(0))
+        self.assertEqual(life.state, 'FLOOR_HANDOFF')
+
+    def test_multifloor_new_floor_requires_fresh_map_pose_and_stop(self):
+        life = MultiFloorLifecycle(floor_id=0, session_id=4)
+        life.exploration_complete(True); life.explorer_paused(True)
+        life.approach_handoff(); life.stair_complete(); life.observe_floor(1)
+        self.assertFalse(life.floor_ready(False, True, True))
+        self.assertFalse(life.floor_ready(True, False, True))
+        self.assertFalse(life.floor_ready(True, True, False))
+        self.assertTrue(life.floor_ready(True, True, True))
+        self.assertEqual(life.state, 'RESET_EXPLORER')
+
+    def test_multifloor_reset_requires_new_session_and_cleared_complete(self):
+        life = MultiFloorLifecycle(floor_id=0, session_id=4)
+        life.exploration_complete(True); life.explorer_paused(True)
+        life.approach_handoff(); life.stair_complete(); life.observe_floor(1)
+        life.floor_ready(True, True, True)
+        self.assertFalse(life.explorer_reset(4, True))
+        self.assertFalse(life.explorer_reset(5, False))
+        self.assertTrue(life.explorer_reset(5, True))
+        self.assertEqual((life.state, life.floor_id, life.session_id), ('EXPLORE', 1, 5))
 
 
 if __name__ == '__main__':

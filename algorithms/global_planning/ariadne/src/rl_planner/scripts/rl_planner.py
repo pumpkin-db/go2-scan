@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import os
 import time
-from std_msgs.msg import Float32, Header
+from std_msgs.msg import Bool, Float32, Header, Int32, String
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Point, PointStamped
@@ -28,6 +28,9 @@ class Runner:
         self.map_info = None
         self.device = 'cpu'
         self.step = 0
+        self.paused = False
+        self.reset_requested = False
+        self.session_id = 1
 
         # visualization
         self.publish_graph = rospy.get_param('~publish_graph', True)
@@ -104,7 +107,8 @@ class Runner:
         self._done_reason = ''
 
         # subscribers
-        rospy.Subscriber('/projected_map', OccupancyGrid, self.get_map_callback, queue_size=1)
+        map_topic = rospy.get_param('~map_topic', '/projected_map')
+        rospy.Subscriber(map_topic, OccupancyGrid, self.get_map_callback, queue_size=1)
         rospy.Subscriber('/state_estimation', Odometry, self.get_loc_callback, queue_size=1)
 
         # publishers
@@ -113,10 +117,20 @@ class Runner:
         self.edge_pub = rospy.Publisher('/edge', Marker, queue_size=1)
         self.node_pub = rospy.Publisher('/node', PointCloud2, queue_size=1)
         self.frontier_pub = rospy.Publisher('/frontier', PointCloud2, queue_size=1)
+        self.status_pub = rospy.Publisher('/ariadne/status', String, queue_size=1, latch=True)
+        self.session_pub = rospy.Publisher('/ariadne/session_id', Int32, queue_size=1, latch=True)
+        self.target_valid_pub = rospy.Publisher('/ariadne/target_valid', Bool, queue_size=1, latch=True)
+        rospy.Subscriber('/ariadne/lifecycle/pause', Bool, self.pause_callback, queue_size=1)
+        rospy.Subscriber('/ariadne/lifecycle/reset_for_floor', Bool, self.reset_callback, queue_size=1)
+        self.session_pub.publish(Int32(self.session_id))
+        self.target_valid_pub.publish(Bool(False))
+        self.status_pub.publish(String('STARTING'))
         
         # get map and robot location
         while self.map_info is None or self.robot_location is None:
             pass
+
+        self.publish_status()
 
         rate = rospy.Rate(20)
         rospy.Timer(rospy.Duration(1 / frequency), self.run)
@@ -198,6 +212,61 @@ class Runner:
 
         self.robot = Agent(policy_net, self.device, self.publish_graph)
 
+    def publish_status(self):
+        if self.paused:
+            status = 'PAUSED'
+        elif self.done:
+            status = 'COMPLETE'
+        elif self.start is None:
+            status = 'STARTING'
+        else:
+            status = 'EXPLORING'
+        self.status_pub.publish(String(status))
+
+    def pause_callback(self, msg):
+        self.paused = msg.data
+        if self.paused:
+            self.next_waypoint_list = []
+            self.next_waypoint = None
+            self.target_valid_pub.publish(Bool(False))
+        self.publish_status()
+
+    def reset_callback(self, msg):
+        if msg.data:
+            self.reset_requested = True
+
+    def reset_for_floor(self):
+        """Discard all decision/session state while retaining checkpoint and latest inputs."""
+        self.init_agent()
+        self.step = 0
+        self.start = None
+        self.robot_cell = None
+        self.next_waypoint_list = []
+        self.history_waypoint_list = []
+        self.next_waypoint = None
+        self.done = False
+        self._done_reason = ''
+        self._last_map_signature = None
+        self._last_map_change_time = time.time()
+        self.save_mode = False
+        self.escape_mode = False
+        self.escape_arrived = False
+        self.escape_origin = None
+        self.escape_start_known_cells = 0
+        self.escape_excluded_nodes = set()
+        self.policy_blocked_nodes = set()
+        self._stop_state = {'reason': None, 't': 0.0}
+        self.session_id += 1
+        self.reset_requested = False
+        self.session_pub.publish(Int32(self.session_id))
+        self.target_valid_pub.publish(Bool(False))
+        self.publish_status()
+        rospy.loginfo('[ariadne] reset for floor: session=%d', self.session_id)
+
+    def publish_waypoint(self, waypoint):
+        self.waypoint_pub.publish(waypoint)
+        self.target_valid_pub.publish(Bool(True))
+
     def _log_stop(self, reason, robot_node_location=None):
         """STOP_REASON 诊断：ARiADNE 本拍不发布航点时记录原因与决策上下文。
         同原因 5s 节流；换原因立即记。纯日志，不改变任何控制流。"""
@@ -230,8 +299,17 @@ class Runner:
             pass
 
     def run(self, event=None):
-        # no more planning if exploration is completed
         t1 = time.time()
+        if self.reset_requested:
+            self.reset_for_floor()
+            return
+        if self.paused:
+            self._log_stop('paused')
+            return
+        if self.start is None:
+            self.publish_status()
+            return
+        # no more planning if exploration is completed
         if self.done:
              self._log_stop('done_' + (self._done_reason or 'unknown'))
              return
@@ -248,7 +326,7 @@ class Runner:
                         and self.next_waypoint_list:
                     next_waypoint = self.next_waypoint_list.pop(0)
                 self.next_waypoint = np.asarray(next_waypoint)
-                self.waypoint_pub.publish(self.waypoint_wrapper(self.next_waypoint))
+                self.publish_waypoint(self.waypoint_wrapper(self.next_waypoint))
                 return
 
             self.escape_mode = False
@@ -269,7 +347,7 @@ class Runner:
 
                     self.history_waypoint_list.append((self.next_waypoint[0], self.next_waypoint[1]))
                     waypoint_msg = self.waypoint_wrapper(self.next_waypoint)
-                    self.waypoint_pub.publish(waypoint_msg)
+                    self.publish_waypoint(waypoint_msg)
                     run_time = Float32()
                     run_time.data = time.time() - t1
 
@@ -297,7 +375,7 @@ class Runner:
                 self.robot_location = self.next_waypoint
                 self.next_waypoint = self.next_waypoint_list.pop(0)
                 waypoint_msg = self.waypoint_wrapper(self.next_waypoint)
-                self.waypoint_pub.publish(waypoint_msg)
+                self.publish_waypoint(waypoint_msg)
         self.next_waypoint_list = []
         # print("robot location at", self.robot_location)
 
@@ -350,7 +428,7 @@ class Runner:
                         "frontier_offset=%.1fm, displacement=%.1fm, map_growth=%d",
                         escape_target[0], escape_target[1], path_distance,
                         frontier_distance, displacement, map_growth)
-                    self.waypoint_pub.publish(self.waypoint_wrapper(self.next_waypoint))
+                    self.publish_waypoint(self.waypoint_wrapper(self.next_waypoint))
                     return
 
                 self.escape_arrived = False
@@ -377,6 +455,8 @@ class Runner:
             self._done_reason = 'stalled_complete' if self.stalled_complete_seconds > 0 else 'utility_zero_immediate'
             self._log_stop('exploration_completed')
             self.done = True
+            self.target_valid_pub.publish(Bool(False))
+            self.publish_status()
             run_time = Float32()
             run_time.data = 0
             self.run_time_pub.publish(run_time)
@@ -457,7 +537,7 @@ class Runner:
 
         # publish
         self.run_time_pub.publish(run_time)
-        self.waypoint_pub.publish(waypoint_msg)
+        self.publish_waypoint(waypoint_msg)
         self._stop_state['reason'] = None  # 恢复发布：下一次停止立即记录
 
         self.step += 1
