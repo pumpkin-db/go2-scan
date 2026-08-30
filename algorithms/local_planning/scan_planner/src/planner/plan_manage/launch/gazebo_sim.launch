@@ -15,6 +15,7 @@
   <arg name="global_planner" default="tare"/>
   <arg name="stair_episode" default="false"/>
   <arg name="stair_approach" default="false"/>
+  <arg name="floor_handoff" default="false"/>
   <arg name="navi_mode_eff" value="$(eval '3' if global_planner == 'ariadne' or stair_approach else navi_mode)"/>
   <!-- 2026-08-26 两分支统一吃近距过滤云（原 tare 分支直吃原云已作废）：
        velodyne 360° 下视射线含狗体自回波，tare 首跑实证 grid_map 起点被自占
@@ -142,6 +143,7 @@
   <include if="$(arg stair_episode)" file="$(find stair_navigation)/launch/stair_episode.launch">
     <arg name="auto_start" value="$(eval not stair_approach)"/>
     <arg name="approach_enabled" value="$(arg stair_approach)"/>
+    <arg name="floor_handoff" value="$(arg floor_handoff)"/>
   </include>
 
   <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策）

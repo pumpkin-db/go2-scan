@@ -122,6 +122,7 @@ class MotionArbiterCore:
     def __init__(self, timeout=0.3):
         self.timeout = timeout
         self.stair_active = False
+        self.handoff_active = False
         self.nav = (None, 0.0)
         self.stair = (None, 0.0)
 
@@ -132,6 +133,8 @@ class MotionArbiterCore:
             self.stair = (command, now)
 
     def select(self, now):
+        if self.handoff_active:
+            return None
         command, stamp = self.stair if self.stair_active else self.nav
         return command if command is not None and now - stamp <= self.timeout else None
 

@@ -12,6 +12,7 @@ class MotionArbiterNode:
         rospy.Subscriber('/cmd_vel_nav', Twist, self.command_cb, callback_args='nav', queue_size=1)
         rospy.Subscriber('/cmd_vel_stair', Twist, self.command_cb, callback_args='stair', queue_size=1)
         rospy.Subscriber('/stair_episode/active', Bool, self.active_cb, queue_size=1)
+        rospy.Subscriber('/floor_handoff/active', Bool, self.handoff_cb, queue_size=1)
         rospy.Timer(rospy.Duration(0.02), self.tick)
 
     def command_cb(self, msg, source):
@@ -19,6 +20,9 @@ class MotionArbiterNode:
 
     def active_cb(self, msg):
         self.core.stair_active = msg.data
+
+    def handoff_cb(self, msg):
+        self.core.handoff_active = msg.data
 
     def tick(self, _event):
         self.pub.publish(self.core.select(rospy.get_time()) or Twist())

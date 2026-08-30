@@ -2,6 +2,7 @@
   <arg name="required_flights" default="2"/>
   <arg name="auto_start" default="true"/>
   <arg name="approach_enabled" default="false"/>
+  <arg name="floor_handoff" default="false"/>
 
   <node pkg="stair_navigation" type="motion_arbiter_node.py" name="motion_arbiter" output="screen"/>
   <node pkg="stair_navigation" type="stair_traverser_node.py" name="stair_traverser" output="screen">
@@ -12,4 +13,5 @@
         name="terrain_follow_sim_adapter" output="screen"/>
   <node if="$(arg approach_enabled)" pkg="stair_navigation" type="stair_approach_node.py"
         name="stair_approach" output="screen"/>
+  <include if="$(arg floor_handoff)" file="$(find stair_navigation)/launch/floor_handoff.launch"/>
 </launch>

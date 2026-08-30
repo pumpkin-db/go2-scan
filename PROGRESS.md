@@ -6,6 +6,28 @@
 
 ## 2026-08-29：主线交接与 P0 资料审计
 
+### P4 Floor Handoff / Active-Floor Map（Navigation-Level PASS）
+
+- 地图链审计：原 `/projected_map` 来自 ARiADNE launch 内 `octomap_server`，分辨率0.2m、frame=`map`
+  （数值等同 world），按绝对 `occupancy_min_z/max_z` 将全局 OctoMap 投影为 `-1/0/100`。这两个 z 参数
+  支持 dynamic_reconfigure；因此不改原 `/projected_map`，P4 并行维护同语义全局 OctoMap并发布
+  `/active_floor_map`，按当前 `floor_z_ref` 动态重投影相对高度带。
+- 新增最小 Floor Context：`floor_id/z_ref/active_z_min/max/state`。初始 floor0 经稳定 pose 自动得到
+  `z_ref=0.0`；仅在 Stair `EXIT_VERIFY→COMPLETE` 后进入 `FLOOR_HANDOFF`，1s 稳定窗口通过后用
+  `median(body_z)-body_height` 建立新层，禁止只凭 z 变高切层、无 Depot GT。
+- 单次 Depot 完整回归：双 flight COMPLETE 后 `floor_id 0→1`，floor1 `z_ref=4.2007m`，动态 band
+  `[4.4007,5.2007]m`；transition 持久记录 `from=0,to=1,stair_id=1-8,status=TRAVERSED,entry/exit`。
+- floor0/floor1 同 XY 对比：投影值保持 `-1/0/100`；floor1 新占据506格，floor0占据中41格在
+  floor1变 free、38格变 unknown，占据集合 Jaccard=0.119。明确重叠例 `(12.5,3.1)` floor0 occupied→
+  floor1 free，证明没有直接串层；floor1真实新障碍正常出现。
+- Handoff 期间 `/floor_handoff/active` 使现有 arbiter fail-closed（ControlOwner=NONE、输出零速），
+  `/motion_arbiter` 仍是 `/cmd_vel` 唯一 publisher；终端抽查20帧 Twist全零。P1/P2/P3 detector、tracker、
+  traverser、SCAN、ModelPlugin、terrain adapter均未改；ARiADNE未启动。
+- 构建通过，27 tests/0失败（新增 stable floor reference、relative z-band、handoff inhibit覆盖）。裁决：
+  P4 Navigation-Level PASS；尚非真机验证。本轮按边界停止，不启动 P5。
+- 已知既有风险：`stair_traverser` 的 episode timeout 检查位于 terminal-state检查之前，COMPLETE 长驻超过
+  120s会转 FAILED（仍保持零速）；本轮禁止修改 P3，后续 lifecycle 接入前需定点修正。
+
 ### P3 SCAN Stair Approach（Navigation-Level PASS）
 
 - 已实现最小接近/交权链：confirmed stair track → 水平地面 staging pose → SCAN mode3

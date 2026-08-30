@@ -1,0 +1,40 @@
+<launch>
+  <arg name="map_resolution" default="0.2"/>
+  <arg name="sensor_range" default="6.0"/>
+  <arg name="occupancy_min_above_floor" default="0.2"/>
+  <arg name="occupancy_max_above_floor" default="1.0"/>
+
+  <!-- Preserve /projected_map. This parallel server keeps global 3D occupancy and
+       exposes only its dynamically selected floor projection. -->
+  <node pkg="tf" type="static_transform_publisher" name="active_floor_map_world_bridge"
+        args="0 0 0 0 0 0 1 map world 100"/>
+  <node pkg="sensor_scan_generation" type="sensorScanGeneration"
+        name="active_floor_sensor_scan_generation" output="screen">
+    <remap from="/registered_scan" to="/mid360_points_clean"/>
+    <remap from="/state_estimation" to="/quad_0/lidar_pose"/>
+  </node>
+  <node pkg="octomap_server" type="octomap_server_node" name="active_floor_octomap" output="screen">
+    <remap from="cloud_in" to="/sensor_scan"/>
+    <remap from="projected_map" to="/active_floor_map"/>
+    <remap from="octomap_binary" to="/active_floor_octomap_binary"/>
+    <remap from="octomap_full" to="/active_floor_octomap_full"/>
+    <remap from="occupied_cells_vis_array" to="/active_floor/occupied_cells"/>
+    <remap from="free_cells_vis_array" to="/active_floor/free_cells"/>
+    <remap from="octomap_point_cloud_centers" to="/active_floor/octomap_centers"/>
+    <param name="frame_id" value="map"/>
+    <param name="base_frame_id" value="world"/>
+    <param name="filter_ground" value="true"/>
+    <param name="resolution" value="$(arg map_resolution)"/>
+    <param name="occupancy_min_z" value="$(arg occupancy_min_above_floor)"/>
+    <param name="occupancy_max_z" value="$(arg occupancy_max_above_floor)"/>
+    <param name="sensor_model/max_range" value="$(arg sensor_range)"/>
+    <param name="sensor_model/hit" value="1.0"/>
+    <param name="sensor_model/miss" value="0.45"/>
+    <param name="sensor_model/max" value="1.0"/>
+    <param name="sensor_model/min" value="0.2"/>
+  </node>
+  <node pkg="stair_navigation" type="floor_manager_node.py" name="floor_manager" output="screen">
+    <param name="occupancy_min_above_floor" value="$(arg occupancy_min_above_floor)"/>
+    <param name="occupancy_max_above_floor" value="$(arg occupancy_max_above_floor)"/>
+  </node>
+</launch>

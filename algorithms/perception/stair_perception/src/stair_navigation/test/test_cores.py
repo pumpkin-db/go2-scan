@@ -6,6 +6,7 @@ from stair_navigation.control import (CorridorFollower, MotionArbiterCore, Terra
                                       ExitVerifier, compute_staging, landing_reacquire_score,
                                       mission_extent_expands, same_track_geometry,
                                       stair_state_owns_control)
+from stair_navigation.floor_context import StablePoseWindow, relative_z_band
 
 
 class CoreTests(unittest.TestCase):
@@ -17,6 +18,9 @@ class CoreTests(unittest.TestCase):
         self.assertIsNone(core.select(1.1))
         core.update('stair', 'stair', 1.2)
         self.assertEqual(core.select(1.3), 'stair')
+        core.handoff_active = True
+        self.assertIsNone(core.select(1.3))
+        core.handoff_active = False
         self.assertIsNone(core.select(1.6))
 
     def test_corridor_progress_and_correction(self):
@@ -94,6 +98,14 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(stair_state_owns_control('IDLE'))
         self.assertTrue(stair_state_owns_control('COMPLETE'))
         self.assertTrue(stair_state_owns_control('FAILED'))
+
+    def test_floor_reference_requires_stable_pose_and_relative_band(self):
+        window = StablePoseWindow(duration=1.0, max_xy_span=0.08, max_z_span=0.04)
+        for i in range(11):
+            window.add(i * 0.1, (14.0 + 0.002 * (i % 2), 3.5, 4.73))
+        self.assertTrue(window.stable())
+        self.assertAlmostEqual(window.floor_z(0.35), 4.38)
+        self.assertEqual(relative_z_band(4.38, 0.2, 1.0), (4.58, 5.38))
 
 
 if __name__ == '__main__':
