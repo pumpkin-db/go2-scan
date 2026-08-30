@@ -93,6 +93,12 @@
 
   <!-- 5. 狗模型 TF 显示 -->
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="go2_robot_state_publisher"/>
+  <!-- 5b. /joint_states 发布（恢复上游 SCAN 原版接线，a845c4a vendor line65）：
+       c33cedd 移出主栈后 ROS 侧无人发 joint_states → RSP 拿不到 12 个 revolute
+       腿关节角 → RViz 腿部 41/44 link 缺 TF。静止发固定站姿、行走发 trot 摆动。
+       腿关节 ownership：本节点是唯一 /joint_states owner；ModelPlugin 跟随本话题
+       驱动 Gazebo 腿关节（body pose ownership 仍在 ModelPlugin，未变）。 -->
+  <node pkg="scan_planner" name="go2_gait_publisher" type="go2_gait_publisher" output="screen"/>
   <!-- 狗总轨迹可视化：订阅 /quad_0/body_pose，累积发布 /odom_visualization/path（his_path） -->
   <node pkg="odom_visualization" type="odom_visualization" name="odom_visualization" output="screen"/>
 

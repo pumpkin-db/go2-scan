@@ -10,6 +10,8 @@
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
+#include <map>
+#include <sensor_msgs/JointState.h>
 #include <std_msgs/Float64.h>
 #include <tf/transform_broadcaster.h>
 
@@ -40,6 +42,8 @@ public:
     cmd_sub_ = nh_->subscribe("/cmd_vel", 1, &Go2KinematicModelPlugin::OnCmd, this);
     z_target_sub_ = nh_->subscribe("/sim/body_z_target", 1,
                                    &Go2KinematicModelPlugin::OnZTarget, this);
+    js_sub_ = nh_->subscribe("/joint_states", 5,
+                             &Go2KinematicModelPlugin::OnJointState, this);
     body_pub_ = nh_->advertise<nav_msgs::Odometry>("/quad_0/body_pose", 10);
     lidar_pub_ = nh_->advertise<nav_msgs::Odometry>("/quad_0/lidar_pose", 10);
 
@@ -79,6 +83,18 @@ private:
     have_z_target_ = std::isfinite(z_target_);
   }
 
+  // leg joint targets come from go2_gait_publisher /joint_states (sole owner).
+  // stale data falls back to fixed stance so a dead publisher cannot fling legs.
+  void OnJointState(const sensor_msgs::JointStateConstPtr &msg)
+  {
+    std::lock_guard<std::mutex> lock(cmd_mutex_);
+    const size_t n = std::min(msg->name.size(), msg->position.size());
+    for (size_t i = 0; i < n; ++i)
+      gait_targets_[msg->name[i]] = msg->position[i];
+    last_gait_ = world_->SimTime();
+    have_gait_ = true;
+  }
+
   void CacheStandingJoints()
   {
     const std::array<std::pair<const char *, double>, 12> standing = {{
@@ -92,8 +108,6 @@ private:
       if (joint)
       {
         joint->SetPosition(0, entry.second, true);
-        joint->SetLowerLimit(0, entry.second);
-        joint->SetUpperLimit(0, entry.second);
         standing_joints_.push_back(std::make_pair(joint, entry.second));
       }
     }
@@ -129,10 +143,21 @@ private:
       z_ += Clamp(z_target - z_, -max_vz_ * dt, max_vz_ * dt);
 
     model_->SetWorldPose(ignition::math::Pose3d(x_, y_, z_, 0.0, 0.0, yaw_));
-    for (const auto &entry : standing_joints_)
     {
-      entry.first->SetPosition(0, entry.second, true);
-      entry.first->SetVelocity(0, 0.0);
+      std::lock_guard<std::mutex> lock(cmd_mutex_);
+      const bool gait_fresh =
+          have_gait_ && (sim_time - last_gait_).Double() <= cmd_timeout_;
+      for (const auto &entry : standing_joints_)
+      {
+        double target = entry.second;
+        if (gait_fresh)
+        {
+          const auto it = gait_targets_.find(entry.first->GetName());
+          if (it != gait_targets_.end()) target = it->second;
+        }
+        entry.first->SetPosition(0, target, true);
+        entry.first->SetVelocity(0, 0.0);
+      }
     }
     PublishPoses(sim_time, vx_world, vy_world, (z_ - old_z) / dt, wz);
   }
@@ -175,7 +200,10 @@ private:
   physics::WorldPtr world_;
   event::ConnectionPtr update_connection_;
   std::unique_ptr<ros::NodeHandle> nh_;
-  ros::Subscriber cmd_sub_, z_target_sub_;
+  ros::Subscriber cmd_sub_, z_target_sub_, js_sub_;
+  std::map<std::string, double> gait_targets_;
+  common::Time last_gait_;
+  bool have_gait_ = false;
   ros::Publisher body_pub_, lidar_pub_;
   tf::TransformBroadcaster tf_broadcaster_;
   std::mutex cmd_mutex_;
