@@ -456,11 +456,6 @@
       <pose>0 0 0.0 0 0 0</pose>
     </include>
     <include>
-      <uri>model://restricted_zone</uri>
-      <name>L2_restricted_zone</name>
-      <pose>29.18 -38.66 6.25 0 0 0</pose>
-    </include>
-    <include>
       <name>OpenRobotics/NormalBed</name>
       <uri>model://NormalBed</uri>
       <pose>3.5195334730437486 -38.76897329293675 5.0 0 0 -0.00027416029379088796</pose>
@@ -740,11 +735,6 @@
       <name>hotel_L2</name>
       <uri>model://hotel_L2</uri>
       <pose>0 0 5.0 0 0 0</pose>
-    </include>
-    <include>
-      <uri>model://restricted_zone</uri>
-      <name>L3_restricted_zone</name>
-      <pose>29.18 -38.66 11.25 0 0 0</pose>
     </include>
     <include>
       <name>OpenRobotics/NormalBed_14</name>
