@@ -349,11 +349,6 @@
       <pose>31.04938513226997 -39.53058681540922 0.0 0 0 1.5708</pose>
       <static>True</static>
     </include>
-    <include>
-      <uri>model://person_walking</uri>
-      <name>person_L2</name>
-      <pose>20.0 -32.5.0 5.0 0 0 1.047200</pose>
-    </include>
     <model name="L1_door3">
       <static>true</static>
       <pose>20.250916593273978 -40.03653325504781 0.0 0 0 3.141592653589793</pose>

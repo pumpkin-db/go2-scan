@@ -10,6 +10,11 @@ transitions:
 constraints:
   elevator_shafts: forbidden
   lobby_outer_door: closed_boundary
+spawns:
+  stair_test_spawn:
+    {x: 27.35, y: -33.50, z: 1.00, yaw: 1.5708}
+  exploration_start_spawn:
+    {x: 20.2509, y: -38.00, z: 1.00, yaw: 1.5708}
 notes: >
   This metadata is simulation benchmark documentation only. It must not be
   consumed by stair perception, the supervisor, or navigation decisions.

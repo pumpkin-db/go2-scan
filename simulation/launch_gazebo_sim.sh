@@ -68,11 +68,13 @@ export PYTHONPATH=$STAIR_PERCEPTION/devel/lib/python3/dist-packages:${PYTHONPATH
 
 # 6b) 场景支持：scene:=<name> 时 source scenes/<name>/env.sh（世界/GT/出生点/model路径）
 SCENE=""
+SPAWN_MODE=""
 REST_ARGS=()
 MULTI_FLOOR_REQUEST=0
 for a in "$@"; do
   case "$a" in
     scene:=*) SCENE="${a#scene:=}" ;;
+    spawn_mode:=*) SPAWN_MODE="${a#spawn_mode:=}" ;;
     multi_floor:=true|floor_handoff:=true) MULTI_FLOOR_REQUEST=1; REST_ARGS+=("$a") ;;
     *) REST_ARGS+=("$a") ;;
   esac
@@ -84,10 +86,13 @@ if [ -z "$SCENE" ] && [ "$MULTI_FLOOR_REQUEST" = 1 ]; then
 fi
 EXTRA_ARGS=()
 if [ -n "$SCENE" ]; then
+  export SCENE_SPAWN_MODE="${SPAWN_MODE:-}"
   # shellcheck disable=SC1091
   source $GO2_ROOT/scenes/$SCENE/env.sh 2>/dev/null || { echo "未知场景: $SCENE"; exit 1; }
   echo "[go2-scan launcher] world=$SCENE"
   echo "[go2-scan launcher] world_path=$SCENE_WORLD"
+  echo "[go2-scan launcher] spawn_mode=${SPAWN_MODE:-exploration}"
+  echo "[go2-scan launcher] spawn_pose=$SPAWN_X $SPAWN_Y $SPAWN_Z $SPAWN_YAW"
   EXTRA_ARGS+=(world_file:="$SCENE_WORLD" gt_pcd:="$SCENE_GT"
                init_x:="$SPAWN_X" init_y:="$SPAWN_Y" init_z:="$SPAWN_Z"
                init_yaw:="$SPAWN_YAW" ${SCENE_EXTRA_ARGS:-})
