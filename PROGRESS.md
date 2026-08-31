@@ -4,6 +4,22 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-31：upstream ROS1 physical Go2 平地实跑 PASS，hotel 楼梯 PARTIAL
+
+- `fan-ziqi/rl_sar` @ `376d42c` 已在独立 ROS1 Noetic workspace 用 CPU LibTorch 2.3
+  编出 `rl_sim`；`himloco.pt` 加载成功，12 关节经 `MotorCommand -> EffortJointInterface`
+  输出非零 effort，源码无 `SetWorldPose/set_model_state` 运动链。
+- 平地实测完成起立、`/cmd_vel` 前进、转向、停止；body 由 Gazebo
+  gravity/contact/physics 决定，停止后速度近 0、body z 稳定约 `0.28m`。
+- 已用 go2-scan 自带 `hotel_stairs.world` 生成 physical Go2 并进入 himloco。
+  第一次在控制器启动前落地导致 yaw 偏移；受控重置后仍未对准楼梯中心线，
+  机器人被实际 collision 挡/挤向楼梯侧边，z 未上升。本次没有穿模证据，
+  但也不能标记 stair PASS。
+- 当前不改 go2-scan 上层算法。下一步只应先做可重复的 physical Go2
+  spawn/get-up/alignment launch，完成 hotel 第一 flight 手工低速验收，再引入
+  `sim_backend:=rl_sar`。旧 Geometry Backend 实验仍保存在
+  `stash@{0}: wip/old-geometry-backend-before-rl-sar`。
+
 ## 2026-08-31：hotel_stairs 成为默认多层 benchmark
 
 - 已将经用户视觉验收的三层酒店静态场景完整迁入 `scenes/hotel_stairs/`；它包含三层、
