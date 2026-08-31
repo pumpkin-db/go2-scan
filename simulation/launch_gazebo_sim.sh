@@ -69,16 +69,25 @@ export PYTHONPATH=$STAIR_PERCEPTION/devel/lib/python3/dist-packages:${PYTHONPATH
 # 6b) 场景支持：scene:=<name> 时 source scenes/<name>/env.sh（世界/GT/出生点/model路径）
 SCENE=""
 REST_ARGS=()
+MULTI_FLOOR_REQUEST=0
 for a in "$@"; do
   case "$a" in
     scene:=*) SCENE="${a#scene:=}" ;;
+    multi_floor:=true|floor_handoff:=true) MULTI_FLOOR_REQUEST=1; REST_ARGS+=("$a") ;;
     *) REST_ARGS+=("$a") ;;
   esac
 done
+# The canonical multi-floor benchmark is self-contained hotel_stairs. Keep the
+# legacy indoor_1 default for single-floor invocations; Depot is explicit only.
+if [ -z "$SCENE" ] && [ "$MULTI_FLOOR_REQUEST" = 1 ]; then
+  SCENE="hotel_stairs"
+fi
 EXTRA_ARGS=()
 if [ -n "$SCENE" ]; then
   # shellcheck disable=SC1091
   source $GO2_ROOT/scenes/$SCENE/env.sh 2>/dev/null || { echo "未知场景: $SCENE"; exit 1; }
+  echo "[go2-scan launcher] world=$SCENE"
+  echo "[go2-scan launcher] world_path=$SCENE_WORLD"
   EXTRA_ARGS+=(world_file:="$SCENE_WORLD" gt_pcd:="$SCENE_GT"
                init_x:="$SPAWN_X" init_y:="$SPAWN_Y" init_z:="$SPAWN_Z"
                init_yaw:="$SPAWN_YAW" ${SCENE_EXTRA_ARGS:-})

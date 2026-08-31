@@ -4,6 +4,19 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-08-31：hotel_stairs 成为默认多层 benchmark
+
+- 已将经用户视觉验收的三层酒店静态场景完整迁入 `scenes/hotel_stairs/`；它包含三层、
+  两组楼梯、房间/走廊/家具及封闭电梯井。普通室内门已移除，L1 外部门保持关闭，L2/L3
+  电梯井有永久 collision 安全门。酒店场景是默认 multi-floor benchmark；Depot 降级为
+  显式 `scene:=depot` 的历史回归场景。
+- 世界及全部直接 `model://` 资源均在本仓库内；已移除 RCI-only door/elevator/toggle-floor
+  plugins、`sun`/`Cafe table` URI 问题和旧 RCI 绝对路径。Gazebo Classic 11 headless load
+  已成功；仅剩上游 mesh 材质的非阻塞 OBJ warning。
+- 此场景 metadata 只供仿真 benchmark 说明，禁止进入 stair perception、Supervisor 或导航决策。
+  物理 RL Go2 locomotion 尚未接入；下一阶段是 ROS1 `rl_sar + himloco → hotel_stairs`，
+  不得把旧 synthetic z / GeometrySupportQuery 当作正式物理 backend。
+
 ## 2026-08-30：V2 当前权威基线——仿真体现层需重建
 
 - 开发唯一主线：`refactor/multifloor-realrobot-v2` @ `ad46df1bf9f189c37107acb5aed37d0fe2191cfa`；

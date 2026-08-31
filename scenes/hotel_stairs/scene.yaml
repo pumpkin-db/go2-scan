@@ -1,0 +1,15 @@
+name: hotel_stairs
+description: Static three-floor hotel benchmark, migrated from the RCI scene.
+floors:
+  - {id: 0, name: L1, z: 0.0}
+  - {id: 1, name: L2, z: 5.0}
+  - {id: 2, name: L3, z: 10.0}
+transitions:
+  - {name: stair_group_a, connects: [L1, L2]}
+  - {name: stair_group_b, connects: [L2, L3]}
+constraints:
+  elevator_shafts: forbidden
+  lobby_outer_door: closed_boundary
+notes: >
+  This metadata is simulation benchmark documentation only. It must not be
+  consumed by stair perception, the supervisor, or navigation decisions.
