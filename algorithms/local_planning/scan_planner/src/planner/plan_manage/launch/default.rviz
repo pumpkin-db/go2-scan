@@ -360,28 +360,6 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: false
           Value: true
-        - Class: grid_map_rviz_plugin/GridMap
-          Color: 200; 200; 200
-          Color Layer: elevation
-          Color Transformer: GridMapLayer
-          ColorMap: default
-          Enabled: true
-          Grid Cell Decimation: 1
-          Grid Line Thickness: 0.10000000149011612
-          Height Layer: elevation
-          Height Transformer: GridMapLayer
-          History Length: 1
-          Invert ColorMap: false
-          Max Color: 255; 255; 255
-          Max Intensity: 0.10000000149011612
-          Min Color: 0; 0; 0
-          Min Intensity: 0
-          Name: elevation_map
-          Show Grid Lines: true
-          Topic: /elevation_mapping/elevation_map
-          Unreliable: false
-          Use ColorMap: true
-          Value: true
       Enabled: true
       Name: Mapping
     - Class: rviz/Group
