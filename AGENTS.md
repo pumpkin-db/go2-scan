@@ -1,5 +1,23 @@
 ## Agent skills
 
+## 临时文件规则
+
+- 禁止在 Linux `/tmp` 中创建、保存或依赖任何项目临时文件。
+- 跨项目临时文件统一放在 `/home/pumpkin-db/claude/raicom/tmp/`。
+- 仅属于本项目的临时文件可放在仓库内明确命名且被 Git 忽略的临时目录。
+- 启动脚本、测试和诊断命令不得依赖 `/tmp` 中遗留的 launch、配置或日志。
+
+## Physical Go2 / hotel 启动硬规则
+
+- 物理狗唯一入口是 `simulation/launch_gazebo_sim_3D.sh`；二维运动学狗仍由 `simulation/launch_gazebo_sim.sh` 启动，禁止混用两个同名 `go2_description`。
+- 3D launcher 必须确认 `rospack find go2_description` 和 `rospack find rl_sar` 均来自仓库内 `simulation/physical_go2_ws`；不得 source SCAN workspace 后直接启动物理狗。
+- hotel 是重场景。禁止 world、gzclient、Go2 并发盲目生成：先 paused 加载 world，等待 `hotel_L1/hotel_stair1/hotel_stair2` 存在且模型集合稳定，再等待 bounded render grace，之后 spawn Go2、验证完整 13 links，最后 unpause。
+- Gazebo Model 列表中出现 `go2_gazebo` 不等于模型可见/可用。若模型不可见且 MoveTo 无效，先查 spawn 时序与 `GetModelProperties.body_names`，禁止继续乱改出生点或相机。
+- paused world 中立即启动 controller spawner/switch 可能阻塞 controller manager。正确顺序：spawn 完整模型 → unpause → 12 joint controllers ready → HIMLoco。
+- 自动起立不能依赖固定 sleep。`rl_sim` 必须同时确认模型已收到、12 关节状态均到达、body 已在低位稳定，再发送一次 keyboard `0` 等效 GetUp。
+- physical workspace 重配前须剔除 Conda/Windows Anaconda，并检查 `build/CMakeCache.txt` 的 `Protobuf_DIR`、`absl_DIR`、`utf8_range_DIR`；缓存污染不是算法问题。
+- 已人工验收的两个 physical spawn：`stair_test=(27.35,-33.50,1.00,1.5708)`；`exploration=(20.2509,-38.00,1.00,1.5708)`。修改后必须分别做 GUI 验收。
+
 ### Issue tracker
 
 Issues and PRDs live in GitHub Issues for `pumpkin-db/go2-scan`. See `docs/agents/issue-tracker.md`.
@@ -14,9 +32,10 @@ This is a single-context repository. See `docs/agents/domain.md`.
 
 ## Current simulation decision
 
-- 2026-08-27: CHAMP + Gazebo physics stopped leg flight, but introduced idle wobble, failed locomotion, and ARiADNE blue-tile pose drift.
-- Check body pose, LiDAR pose, height, and `world/map` frame together; do not assume dynamic Gazebo pose preserves the existing ARiADNE contract.
-- Fast fallback (preferred for basic demo): deterministic kinematic body motion + visual gait, with registered stair height changing body `z`. Physical contacts are optional.
+- 二维探索使用 `launch_gazebo_sim.sh`：deterministic kinematic body + visual gait，只验证探索、地图和界面，不作为楼梯物理证据。
+- 三维楼梯使用 `launch_gazebo_sim_3D.sh`：HIMLoco + Gazebo gravity/contact/PD torque。物理狗与运动学狗必须进程、workspace、模型包隔离。
+- synthetic `/sim/body_z_target`、terrain-follow 和 GeometrySupportQuery 均不是正式楼梯 backend；禁止用感知结果反向抬高仿真 body 制造楼层通过。
+- 检查 body pose、LiDAR pose、高度及 `world/map` frame 的完整契约；不能假设切换 physical body 后旧 ARiADNE/SCAN 接口自然保持不变。
 
 ## Codex 协作工作规范
 

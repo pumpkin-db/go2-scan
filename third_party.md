@@ -28,6 +28,7 @@
 |-----------|---------|--------|------|
 | `simulation/cmu_env/` | https://github.com/HongbiaoZ/autonomous_exploration_development_environment | `bf0cba713652` | 仿真底座（velodyne/livox 插件 + go2 模型） |
 | `simulation/cmu_env/src/livox_laser_simulation/` | https://github.com/fratopa/Mid360_simulation_plugin | `aae8ee3a0f16` | MID360 仿真插件（拷入 cmu_env 编译） |
+| `simulation/physical_go2_ws/` | https://github.com/fan-ziqi/rl_sar | `376d42c9b128f963ab08579762d5a216a976ce39` | ROS1 physical Go2：HIMLoco、Go2 description、PD joint controller；本仓库增加 isolated hotel launch 与 gated auto-GetUp |
 
 > 注：cmu_env 上游含 `vehicle_simulator`（TARE 原作者的**无人车**模拟器），四足 Go2 用不到且含 458MB mesh zip，**已删除**。白名单编译只保留 velodyne 插件 + livox 插件。
 

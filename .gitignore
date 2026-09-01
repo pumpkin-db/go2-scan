@@ -13,6 +13,29 @@ devel/
 install/
 .catkin_workspace
 
+# HIMLoco's local inference runtime is a 764 MB binary dependency. The setup
+# script provisions it at this stable local path; source/policy stay versioned.
+simulation/physical_go2_ws/library/
+simulation/physical_go2_ws/src/rl_sar/library/thirdparty/
+simulation/physical_go2_ws/src/rl_sar_zoo/go2_description/mjcf/
+simulation/physical_go2_ws/src/rl_sar/test/
+simulation/physical_go2_ws/src/rl_sar_zoo/go2_description/launch/
+simulation/physical_go2_ws/src/robot_joint_controller/ros2/
+simulation/physical_go2_ws/policy/a1/
+simulation/physical_go2_ws/policy/b2/
+simulation/physical_go2_ws/policy/b2w/
+simulation/physical_go2_ws/policy/d1/
+simulation/physical_go2_ws/policy/g1/
+simulation/physical_go2_ws/policy/go2/robot_lab/
+simulation/physical_go2_ws/policy/go2w/
+simulation/physical_go2_ws/policy/gr1t1/
+simulation/physical_go2_ws/policy/gr1t2/
+simulation/physical_go2_ws/policy/l4w4/
+simulation/physical_go2_ws/policy/lite3/
+simulation/physical_go2_ws/policy/tita/
+__pycache__/
+*.py[cod]
+
 # 归档/临时
 *.tar.gz
 *.zip

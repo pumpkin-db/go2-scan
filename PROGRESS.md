@@ -4,6 +4,20 @@
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
 
+## 2026-09-01：physical Go2 已迁入仓库，hotel 两出生点自动起立 PASS
+
+- 当前开发线为 `refactor/multifloor-realrobot-v2`；本轮从 `fa64272` 开始。远端 `main` 已按用户要求回到同一 V2 基线，后续开发仍只推 V2。
+- 二维 legacy backend 已恢复并人工验收：12 个腿关节在 URDF 中设为 kinematic，避免 ODE 与 ModelPlugin 直接关节位置写入互相竞争造成腿脱体/乱飞；依据前脚 collision 最低点 `-0.31793m`，平地 `init_z` 从 `0.25` 改为 `0.32m`，解决脚穿地下。`launch_gazebo_sim.sh` 仍只负责二维场景、运动学 body 和视觉步态。
+- 新增独立 `simulation/launch_gazebo_sim_3D.sh` 和仓库内 `simulation/physical_go2_ws/`。物理 backend vendor 自 `fan-ziqi/rl_sar@376d42c`：Go2 URDF/collision/inertia、`robot_joint_controller`、ROS msgs、HIMLoco 配置/权重和 ROS1 `rl_sim`。它不启动 ARiADNE、SCAN、旧 ModelPlugin 或 synthetic-z；body 由 Gazebo gravity/contact + 12 关节 PD effort 决定。
+- 3D launcher 强制 physical overlay 优先，并校验 `go2_description`/`rl_sar` 的 `rospack` 来源，解决 SCAN 视觉模型与 physical 模型同名包污染。hotel 使用已验收 spawn：`stair_test=(27.35,-33.50,1.00,yaw=1.5708)`；`exploration=(20.2509,-38.00,1.00,yaw=1.5708)`。
+- 本轮最严重误区：`/gazebo/model_states`/GUI 模型列表里存在 `go2_gazebo`，但狗不可见、不可 MoveTo。根因不是坐标，也不是相机，而是重 hotel world、gzclient 与 SpawnModel 并发加载时序；服务端 entity 存在不代表 gzclient 已正确同步 visual。最终流程：paused 加载完整 hotel → 等关键模型与模型集合稳定 3s → render grace 3s → spawn URDF → 验证 13 body links → unpause。
+- 第二个时序坑：paused world 中立刻 controller switch 会占住 controller manager 服务。最终取消该并发启动方式；模型完成并 unpause 后再由 `rl_sim` 启动全部 controller。
+- `rl_sim` 增加可选 `auto_getup`：不用固定延迟；先确认模型状态、12 关节反馈和 body 低位稳定 1s，再发送一次 keyboard `0` 等效 GetUp。模型索引也由错误的固定 `model_states[2]` 改为按 `go2_gazebo` 名称查找。
+- 构建曾被旧 `physical_go2_ws/build/CMakeCache.txt` 中 Windows Anaconda `Protobuf_DIR/absl_DIR/utf8_range_DIR` 污染；清除这些 cache keys 并使用 ROS Noetic/system Python 后从头配置、编译通过。后续若源码正确但构建异常，先查缓存和实际 runtime provenance，不要改控制代码。
+- 冷启动实测：`stair_test` 与 `exploration` 两种模式均能看到完整 physical Go2、自然落地、13 controllers running、HIMLoco 自动 GetUp 完成；站立 body z 约 `0.322m`。用户已分别视觉确认楼梯口和 L1 大门内侧位置正确。当前只证明 spawn/GetUp，**未证明 HIMLoco 能上 hotel 楼梯**。
+- 清理四个失效脚本：`nuclear_restart.sh`、`restart_ariadne.sh`、`test_stair_climb.sh`、`verify_run7.sh`；扩充 `kill_all_sim.sh` 对 physical backend 的清理；README 已按当前二维/三维双 backend 重写。
+- 下一步：只在 `stair_test` 入口严格复现 HIMLoco 楼梯条件；禁止把当前 spawn/GetUp PASS 写成 stair locomotion PASS，禁止恢复 GeometrySupportQuery/synthetic-z 伪物理路线。
+
 ## 2026-08-31：upstream ROS1 physical Go2 平地实跑 PASS，hotel 楼梯 PARTIAL
 
 - `fan-ziqi/rl_sar` @ `376d42c` 已在独立 ROS1 Noetic workspace 用 CPU LibTorch 2.3

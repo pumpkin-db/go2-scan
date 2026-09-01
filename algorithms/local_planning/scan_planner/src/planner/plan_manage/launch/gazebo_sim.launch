@@ -26,7 +26,9 @@
   <arg name="scan_cloud" value="/mid360_points_clean"/>
   <arg name="init_x" default="-7.5"/>
   <arg name="init_y" default="0.5"/>
-  <arg name="init_z" default="0.25"/>
+  <!-- Current visual-gait stance places the front foot collision bottom
+       0.31793 m below base; 0.32 m is the flat-floor contact height. -->
+  <arg name="init_z" default="0.32"/>
   <arg name="init_yaw" default="0.0"/>
   <!-- 无头跑分开关（评估器/批量测试用）：gui:=false rviz:=false 省 CPU。
        默认 true 保持人工观察工作流不变。 -->

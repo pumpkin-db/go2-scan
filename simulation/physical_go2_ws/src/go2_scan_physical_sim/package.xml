@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>go2_scan_physical_sim</name>
+  <version>0.1.0</version>
+  <description>Launch glue for the isolated ROS1 HIMLoco Go2 simulation backend.</description>
+  <maintainer email="maintainers@go2-scan.local">go2-scan maintainers</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>gazebo_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>go2_description</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>tf</exec_depend>
+  <exec_depend>xacro</exec_depend>
+</package>

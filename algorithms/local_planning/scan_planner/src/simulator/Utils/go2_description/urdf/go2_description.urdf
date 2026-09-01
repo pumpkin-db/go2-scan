@@ -25,6 +25,22 @@
   <gazebo reference="base">
     <kinematic>true</kinematic>
   </gazebo>
+  <!-- This simulator drives the 12 leg joints kinematically from the single
+       /joint_states visual-gait source.  They must not also be integrated by
+       ODE between direct joint-position updates: that was the confirmed cause
+       of leg separation/flying in the legacy visual backend. -->
+  <gazebo reference="FL_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FL_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FL_calf"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FR_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FR_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="FR_calf"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RL_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RL_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RL_calf"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RR_hip"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RR_thigh"><kinematic>true</kinematic></gazebo>
+  <gazebo reference="RR_calf"><kinematic>true</kinematic></gazebo>
   <gazebo>
     <plugin name="go2_kinematic_model" filename="libgo2_kinematic_model_plugin.so">
       <cmdTimeout>0.3</cmdTimeout>
