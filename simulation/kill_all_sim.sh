@@ -9,7 +9,7 @@ pkill -9 -x rosout 2>/dev/null
 pkill -9 -x gzserver 2>/dev/null
 pkill -9 -x gzclient 2>/dev/null
 pkill -9 -x rl_sim 2>/dev/null
-for pat in scan_planner_node go2_kinematic_sim closed_loop_controller \
+for pat in scan_planner_node closed_loop_controller \
            gazebo_bridge.py cloud_range_filter.py scan_cloud_accumulator.py \
            octomap_server sensorScanGeneration rl_planner.py ariadne_goal_bridge.py \
            map_pub odom_visualization go2_gait_publisher \

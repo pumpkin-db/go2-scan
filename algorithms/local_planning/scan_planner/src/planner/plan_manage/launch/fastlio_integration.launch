@@ -1,9 +1,7 @@
 <launch>
   <!-- ============================================================ -->
   <!-- FAST-LIO2 integration test (simulated FAST-LIO2 topics):    -->
-  <!--   /Odometry        : body odometry (from go2_kinematic_sim, -->
-  <!--                      throttled to 10 Hz = MID360 scan rate,  -->
-  <!--                      mimics FAST-LIO2 scan-rate odometry)    -->
+  <!--   /Odometry        : external body odometry (scan-rate)       -->
   <!--   /cloud_registered: world-frame registered cloud           -->
   <!--                      (relay of /pcl_render_node/cloud, which -->
   <!--                      is published in "world" frame)          -->
@@ -42,13 +40,10 @@
        odom_rate can be lowered to stress-test pose frequency -->
   <arg name="odom_rate" default="10.0"/>
 
-  <!-- trajectory tracking + simulated robot (odometry publisher) -->
+  <!-- trajectory tracking; /Odometry is supplied by external LIO -->
   <node pkg="scan_planner" name="closed_loop_controller" type="closed_loop_controller" output="screen"/>
-  <node pkg="scan_planner" name="go2_kinematic_sim" type="go2_kinematic_sim" output="screen">
-    <param name="sim_rate" value="$(arg odom_rate)"/>
-  </node>
 
-  <!-- go2 model / gait (visualization, same as run.launch) -->
+  <!-- go2 model / gait (visualization) -->
   <param name="robot_description" textfile="$(find go2_description)/urdf/go2_description.urdf"/>
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="go2_robot_state_publisher" output="screen"/>
   <node pkg="scan_planner" name="go2_gait_publisher" type="go2_gait_publisher" output="screen"/>

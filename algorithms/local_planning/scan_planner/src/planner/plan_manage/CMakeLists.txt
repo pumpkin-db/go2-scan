@@ -79,9 +79,6 @@ add_executable(closed_loop_controller src/closed_loop_controller.cpp)
 target_link_libraries(closed_loop_controller ${catkin_LIBRARIES})
 add_dependencies(closed_loop_controller ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
-add_executable(go2_kinematic_sim src/go2_kinematic_sim.cpp)
-target_link_libraries(go2_kinematic_sim ${catkin_LIBRARIES})
-
 add_executable(go2_gait_publisher src/go2_gait_publisher.cpp)
 target_link_libraries(go2_gait_publisher ${catkin_LIBRARIES})
 
