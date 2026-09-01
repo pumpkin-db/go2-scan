@@ -1,6 +1,7 @@
 #!/bin/bash
 # indoor_1 场景环境变量（默认场景）
-GO2=$HOME/claude/raicom/go2-scan
+SCENE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GO2="$(cd "$SCENE_DIR/../.." && pwd)"
 SCENE_WORLD=$GO2/simulation/worlds/indoor_1.world
 SCENE_GT=$GO2/maps/indoor_1.pcd
 SPAWN_X=-7.5
