@@ -17,9 +17,6 @@ catkin_package()
 catkin_install_python(PROGRAMS
   scripts/gazebo_bridge.py
   scripts/scan_cloud_accumulator.py
-  scripts/tare_bridge.py
-  scripts/tare_goal_bridge.py
-  scripts/navigation_boundary_publisher.py
   scripts/ariadne_goal_bridge.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

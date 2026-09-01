@@ -1,9 +1,0 @@
-std_msgs/Header header
-geometry_msgs/Pose entry_pose
-geometry_msgs/Pose exit_pose
-geometry_msgs/Vector3 heading
-float32 slope
-float32 width
-float32 rise
-float32 confidence
-uint32 support_count
