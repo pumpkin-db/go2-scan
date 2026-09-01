@@ -12,7 +12,7 @@ pkill -9 -x rl_sim 2>/dev/null
 for pat in scan_planner_node go2_kinematic_sim closed_loop_controller \
            gazebo_bridge.py cloud_range_filter.py scan_cloud_accumulator.py \
            octomap_server sensorScanGeneration rl_planner.py ariadne_goal_bridge.py \
-           elevation_mapping map_pub odom_visualization go2_gait_publisher \
+           map_pub odom_visualization go2_gait_publisher \
            controller_manager/spawner \
            robot_state_publisher realTimePlot visualizationTools; do
   pkill -9 -f "$pat" 2>/dev/null
