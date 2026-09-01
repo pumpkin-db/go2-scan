@@ -15,7 +15,6 @@ catkin_package()
 
 # 5 个胶水节点（纯 Python，catkin_install_python 安装到 devel/lib/go2_bridge）
 catkin_install_python(PROGRAMS
-  scripts/gazebo_bridge.py
   scripts/scan_cloud_accumulator.py
   scripts/ariadne_goal_bridge.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
