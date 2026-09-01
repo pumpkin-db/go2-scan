@@ -7,12 +7,12 @@
 
   <arg name="world_file" default="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/worlds/indoor_1.world"/>
   <arg name="navi_mode" default="1"/>
-  <!-- 全局决策层选择：tare（默认）| ariadne | none。
+  <!-- 全局决策层选择：ariadne（默认）| tare | none。
        none = 纯底盘+传感链（无全局决策核）：B 验收（terrain_follow 遥控上台阶）、
        传感器链路调试、D 组件 climb_mode 单测的干净底座。FSM 由 navi_mode 直接
        驱动（=1 等外部单点目标、=2 吃 scan_planner/tools/keypoint.yaml 预设航点），
        无决策核发目标时狗静止等待遥控/预设航点。 -->
-  <arg name="global_planner" default="tare"/>
+  <arg name="global_planner" default="ariadne"/>
   <arg name="stair_episode" default="false"/>
   <arg name="stair_approach" default="false"/>
   <arg name="floor_handoff" default="false"/>
@@ -165,15 +165,8 @@
     <arg name="multi_floor" value="$(arg multi_floor)"/>
   </include>
 
-  <!-- 9. 2.5D 高程图（elevation_mapping：MID360 点云 + TF → 高程图，供楼梯检测/地形决策）
-       cfg_dir 可被场景覆盖（Depot 等场景窗口中心与 indoor_1 不同） -->
-  <arg name="cfg_dir" default="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/elevation"/>
-  <include file="$(optenv GO2_ROOT /home/pumpkin-db/claude/raicom/go2-scan)/simulation/elevation/elevation.launch">
-    <arg name="cfg_dir" value="$(arg cfg_dir)"/>
-  </include>
-
   <!-- 10. 全局探索决策层（决定"往哪探索"），global_planner 选择：
-       tare    -> TARE（默认）：way_point -> /move_base_simple/goal（navi_mode=1 追单点）
+       tare    -> TARE：way_point -> /move_base_simple/goal（navi_mode=1 追单点）
        ariadne -> ARiADNE（官方契约重做版，2026-08-24）：
                   建图+决策链在 rl_planner 包自带 launch 里（go2_ariadne.launch）：
                   点云转回传感器系+TF -> octomap(frame_id=map, map≡world 数值桥接)
