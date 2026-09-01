@@ -76,10 +76,10 @@
          用户 5 → 3 → 4 → 10 → 6.5 → 6。
          注意与 rl_planner sensor_range 保持同值（官方即同 arg 耦合）。 -->
     <param name="sensor_model/max_range" value="$(arg sensor_range)"/>
-    <param name="sensor_model/hit" type="double" value="1"/>
-    <param name="sensor_model/miss" type="double" value="0.45"/>
-    <param name="sensor_model/max" type="double" value="1"/>
-    <param name="sensor_model/min" type="double" value="0.2"/>
+    <param name="sensor_model/hit" type="double" value="0.70"/>
+    <param name="sensor_model/miss" type="double" value="0.40"/>
+    <param name="sensor_model/max" type="double" value="0.97"/>
+    <param name="sensor_model/min" type="double" value="0.12"/>
   </node>
 
   <!-- rl_planner：scripts 为官方原版一字未改（含 checkpoint 权重）。
