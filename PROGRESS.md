@@ -1,5 +1,16 @@
 # go2-scan 进度记录
 
+## Current Status / 当前有效状态
+
+当前仓库定位：纯二维、单层 `indoor_1` 探索；默认链为 MID360 仿真 →
+OctoMap `/projected_map` → ARiADNE → `/way_point` → SCAN-Planner → `/cmd_vel` →
+`go2_kinematic_model_plugin` → Go2。TARE、stair/multifloor、
+`elevation_mapping`、`terrain_analysis`、physical hotel backend 已删除，不属于当前
+运行或构建链。`fastlio_integration.launch` 已收缩为可参数化的外部 LIO 接口模板。
+
+当前 Gazebo 二维链已由用户完成 GUI 验收。`tools/evaluate_exploration.py` 仍作为评估工具
+保留。以下正文是历史开发记录，不代表当前仓库仍包含其中提到的功能或资产。
+
 > 实时进度流水账（写给未来的 AI / 自己接续用）。按日期倒序。
 > 指令、规则、硬约束见 `CLAUDE.md`（那是规则层，不是进度层）。
 > 第三方来源/commit/编译见 `third_party.md`。
