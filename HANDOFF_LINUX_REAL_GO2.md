@@ -2,6 +2,34 @@
 
 > 面向下一位直接接入 Unitree Go2 + MID360 的 AI。标签：`[VERIFIED]` 已核实；`[CURRENT]` 当前仓库实现；`[TARGET]` 目标；`[TODO]` 待做；`[HISTORICAL]` 旧 Linux 交接资料事实，仅在当前真机复核后使用。**真机迁移前必须让 WSL2 侧 AI 根据最新 main 再检查/更新本文；本文不是永久有效配置。**
 
+## Linux x86_64 仿真验证结果
+
+`[VERIFIED]`
+
+记录：
+
+当前 x86 Linux 开发机已经验证：
+
+```text
+Ubuntu 20.04
+ROS Noetic
+Gazebo 11
+```
+
+完整二维链：
+
+```text
+sensor simulation
+→ mapping
+→ ARiADNE
+→ SCAN
+→ velocity command
+```
+
+说明：
+
+这是进入真实 Go2 前的**中间验证平台**（二维仿真链已稳定，但**不等于真机已通过**）。
+
 ## 1. 最终目标与边界
 
 `[TARGET]`
@@ -311,6 +339,70 @@ ARiADNE `[CURRENT]` 需要二维 occupancy map 与 body pose，发布 exploratio
 
 `[TODO]` 当前未完成：main 在 NX 真正部署；external LIO adapter 原生编译；ARiADNE+SCAN+OctoMap 真机组合；local-ground-relative 障碍保证；最终 MID360 外参；NX 频率/性能与速度限制；平地长时稳定性；真机 autonomous exploration。它们均不能写成已完成。
 
-## 给下一位 AI 的第一条任务
+## 已知环境迁移经验
 
-不要立刻让狗自主移动。先根据最新 main 更新本文，再完成网络、时钟、MID360、LIO、TF 的只读健康检查。
+### Workspace plugin 管理
+
+`[VERIFIED]`
+
+多 workspace ROS / Gazebo 项目中，必须确认 `GAZEBO_PLUGIN_PATH` 包含：
+
+```text
+scan_planner/devel/lib
+cmu_env/devel/lib
+```
+
+否则 `Go2 model plugin` 无法加载 → 传感器链整体无输出。
+
+### Conda + ROS Python
+
+`[VERIFIED]`
+
+ARiADNE 使用独立 conda 环境。**不要假设** conda python 拥有 ROS Python 包。当前解决：
+
+```text
+ariadne env: rospkg==1.6.0
+```
+
+未来迁移机器时，优先检查：
+
+```text
+python 路径
+PYTHONPATH
+rospy
+rospkg
+```
+
+## 真机阶段前状态说明
+
+当前：
+
+```text
+二维仿真： [VERIFIED]
+真机：     [TARGET]
+```
+
+尚未验证：
+
+```text
+Orin NX 环境
+aarch64 重新编译
+MID360 真实驱动
+外部 LIO
+TF
+floor-z
+cmd_vel_bridge
+SportClient
+```
+
+**不要因为 Linux 仿真通过，直接认为真机可运行。**
+
+## 下一位 AI 第一任务
+
+进入 NX 前：
+
+1. 阅读 README
+2. 阅读 HANDOFF_LINUX_REAL_GO2
+3. 确认当前 main 状态
+4. 不恢复历史 V2 / TARE / multifloor 路线
+5. 按真机 bring-up 阶段执行
